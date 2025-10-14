@@ -191,6 +191,8 @@ class ScreenCapture:
     def capture(self) -> Optional[np.ndarray]:
         """Capture current screen frame."""
         try:
+            self.logger.info("Tentando capturar tela...")
+
             # Throttle capture rate
             current_time = time.time()
             time_diff = current_time - self.last_capture_time
@@ -226,6 +228,8 @@ class ScreenCapture:
             self.last_capture_time = current_time
             self._update_fps_counter()
 
+            self.logger.info(
+                f"Tela capturada com sucesso ({frame.shape[1]}x{frame.shape[0]})")
             return frame
 
         except Exception as e:

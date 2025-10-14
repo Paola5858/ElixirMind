@@ -27,13 +27,21 @@ class MinimalBot:
 
     def capture_screen(self):
         """Captura tela do jogo"""
-        monitor = self.sct.monitors[1]  # Monitor principal
-        screenshot = self.sct.grab(monitor)
-        return np.array(screenshot)
+        print("📸 Tentando capturar tela...")
+        try:
+            monitor = self.sct.monitors[1]  # Monitor principal
+            screenshot = self.sct.grab(monitor)
+            frame = np.array(screenshot)
+            print("✅ Tela capturada com sucesso")
+            return frame
+        except Exception as e:
+            print(f"❌ Erro ao capturar tela: {e}")
+            return None
 
     def detect_elixir(self, frame):
         """Detecção básica de elixir por cor"""
         try:
+            print("🔍 Detectando elixir...")
             # Extrai região do elixir
             roi = frame[self.roi_elixir[1]:self.roi_elixir[3],
                        self.roi_elixir[0]:self.roi_elixir[2]]
@@ -53,15 +61,18 @@ class MinimalBot:
 
             # Estima elixir (0-10)
             estimated_elixir = int(fill_ratio * 10)
-            return max(0, min(10, estimated_elixir))
+            elixir = max(0, min(10, estimated_elixir))
+            print(f"💜 Elixir detectado: {elixir}")
+            return elixir
 
         except Exception as e:
-            print(f"Erro detecção elixir: {e}")
+            print(f"❌ Erro detecção elixir: {e}")
             return 5  # Valor padrão
 
     def is_in_battle(self, frame):
         """Detecta se está em batalha"""
         try:
+            print("🔍 Verificando se está em batalha...")
             # Verifica se há cor de elixir na tela
             roi = frame[self.roi_elixir[1]:self.roi_elixir[3],
                        self.roi_elixir[0]:self.roi_elixir[2]]
@@ -73,15 +84,23 @@ class MinimalBot:
 
             purple_pixels = np.sum(mask > 0)
             total_pixels = mask.shape[0] * mask.shape[1]
+            ratio = purple_pixels / total_pixels
 
-            return (purple_pixels / total_pixels) > 0.1
+            in_battle = ratio > 0.1
+            if in_battle:
+                print("✅ Em batalha detectada")
+            else:
+                print("❌ Não está em batalha")
+            return in_battle
 
-        except Exception:
+        except Exception as e:
+            print(f"❌ Erro ao detectar batalha: {e}")
             return False
 
     def play_random_card(self):
         """Joga carta aleatória em posição aleatória"""
         try:
+            print("🎮 Preparando para jogar carta...")
             # Escolhe carta aleatória (0-3)
             import random
             card_index = random.randint(0, 3)
@@ -98,13 +117,14 @@ class MinimalBot:
             # Executa drag da carta
             pyautogui.moveTo(card_pos[0], card_pos[1])
             time.sleep(0.1)
-            pyautogui.dragTo(target_pos[0], target_pos[1], duration=0.3)
+            pyautogui.dragTo(
+                target_pos[0], target_pos[1], duration=0.3, tween=pyautogui.easeOutQuad)
 
-            print(f"🎮 Jogou carta {card_index} em {target_pos}")
+            print(f"✅ Decisão tomada: jogar carta {card_index} em {target_pos}")
             return True
 
         except Exception as e:
-            print(f"Erro ao jogar carta: {e}")
+            print(f"❌ Erro ao jogar carta: {e}")
             return False
 
     async def run(self):
@@ -132,13 +152,18 @@ class MinimalBot:
                     if (elixir >= 4 and
                         current_time - last_action_time > 3):
 
+                        print(
+                            f"🤔 Decisão tomada: jogar carta aleatória com {elixir} de elixir.")
                         if self.play_random_card():
                             last_action_time = current_time
+                        else:
+                            print("❌ Falha ao executar ação")
 
                 else:
+                    print("❌ Nenhum elemento de batalha detectado.")
                     print("⏳ Aguardando batalha...")
 
-                time.sleep(1)  # Pausa 1 segundo
+                await asyncio.sleep(1)  # Pausa 1 segundo de forma assíncrona
 
         except KeyboardInterrupt:
             print("\n🛑 Bot parado pelo usuário")
