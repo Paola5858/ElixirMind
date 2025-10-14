@@ -1,4 +1,37 @@
-def detect_battle(self, screen, debug_mode=False) -> tuple[bool, np.ndarray | None]:
+import cv2
+import numpy as np
+import logging
+from typing import Optional, Tuple
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+class Detector:
+    def __init__(self, config):
+        self.config = config
+        self.initialized = False
+        self.cache_manager = None  # Will be set during initialization
+
+    def initialize(self):
+        """Initialize the detector with necessary components."""
+        try:
+            # Import here to avoid circular imports
+            from vision.cache.cache_manager import CacheManager
+            self.cache_manager = CacheManager()
+            self.initialized = True
+            logger.info("Detector initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize detector: {e}")
+            self.initialized = False
+
+    def shutdown(self):
+        """Shutdown the detector and cleanup resources."""
+        if self.cache_manager:
+            self.cache_manager.clear()
+        self.initialized = False
+        logger.info("Detector shutdown")
+
+    def detect_battle(self, screen, debug_mode=False) -> tuple[bool, np.ndarray | None]:
         """Detect if battle is active using multiple indicators."""
         if not self.initialized or screen is None:
             return False, None
