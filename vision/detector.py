@@ -4,19 +4,50 @@ import logging
 from typing import Optional, Tuple
 from pathlib import Path
 
+# Importa as classes necessárias para a captura de tela
+from screen_capture import ScreenCapture
+from config import load_config
+
 logger = logging.getLogger(__name__)
 
 class Detector:
     def __init__(self, config):
-        self.config = config
+        # Wrap config dict in a class with attribute access
+        class ConfigWrapper:
+            def __init__(self, config_dict):
+                self.config_dict = config_dict
+                # Set default attributes
+                self.EMULATOR_TYPE = config_dict.get('emulator_type', 'memu')
+                self.TARGET_FPS = 10
+                self.CAPTURE_METHOD = "mss"
+                self.SCREENSHOT_DIR = "screenshots"
+                self.ROI_HAND = (0, 800, 1920, 1080)
+                self.ROI_BATTLEFIELD = (0, 0, 1920, 800)
+                self.ROI_ELIXIR = (1700, 900, 1900, 1000)
+                self.ROI_ENEMY_TOWERS = (0, 0, 1920, 400)
+                self.ROI_MY_TOWERS = (0, 400, 1920, 800)
+                self.target_resolution = (1920, 1080)
+                self.template_threshold = 0.7
+                self.roi_padding = 10
+
+            def get(self, key, default=None):
+                return self.config_dict.get(key, default)
+
+        self.config = ConfigWrapper(config)
         self.initialized = False
         self.cache_manager = None  # Will be set during initialization
+        self.screen_capture = None  # Instância do capturador de tela
 
     def initialize(self):
         """Initialize the detector with necessary components."""
         try:
             # Import here to avoid circular imports
             from vision.cache.cache_manager import CacheManager
+
+            # Inicializa o sistema de captura de tela
+            self.screen_capture = ScreenCapture(self.config)
+            self.screen_capture.initialize()
+
             self.cache_manager = CacheManager()
             self.initialized = True
             logger.info("Detector initialized successfully")
@@ -28,8 +59,22 @@ class Detector:
         """Shutdown the detector and cleanup resources."""
         if self.cache_manager:
             self.cache_manager.clear()
+        if self.screen_capture:
+            self.screen_capture.cleanup()
         self.initialized = False
         logger.info("Detector shutdown")
+
+    def capture_screen(self) -> Optional[np.ndarray]:
+        """
+        Capture screen using the screen capture system.
+        This method acts as a bridge to the ScreenCapture module.
+        """
+        if not self.initialized or not self.screen_capture:
+            logger.error(
+                "Detector or ScreenCapture not initialized. Cannot capture screen.")
+            return None
+
+        return self.screen_capture.capture()
 
     def detect_battle(self, screen, debug_mode=False) -> tuple[bool, np.ndarray | None]:
         """Detect if battle is active using multiple indicators."""
