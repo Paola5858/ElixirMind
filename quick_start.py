@@ -77,7 +77,8 @@ class SystemValidator:
             print(f"   ✅ {len(yolo_models)} modelo(s) YOLOv5 encontrado(s)")
             for model in yolo_models:
                 size_mb = model.stat().st_size / (1024 * 1024)
-                print(".1f"        else:
+                print(f"      - {model.name}: {size_mb:.1f} MB")
+        else:
             self.warnings.append("⚠️ Nenhum modelo YOLOv5 encontrado")
 
     async def validate_config(self):
@@ -130,24 +131,24 @@ class SystemValidator:
         await self.validate_config()
         await self.validate_directories()
 
-        print("
-📊 RESULTADOS DA VALIDAÇÃO:"        print(f"❌ Problemas críticos: {len(self.issues)}")
+        print("\n📊 RESULTADOS DA VALIDAÇÃO:")
+        print(f"❌ Problemas críticos: {len(self.issues)}")
         print(f"⚠️ Avisos: {len(self.warnings)}")
 
         if self.issues:
-            print("
-🚨 PROBLEMAS CRÍTICOS:"            for issue in self.issues:
+            print("\n🚨 PROBLEMAS CRÍTICOS:")
+            for issue in self.issues:
                 print(f"  {issue}")
-            print("
-❌ Sistema NÃO está pronto para uso!"            return False
+            print("\n❌ Sistema NÃO está pronto para uso!")
+            return False
 
         if self.warnings:
-            print("
-⚠️ AVISOS:"            for warning in self.warnings:
+            print("\n⚠️ AVISOS:")
+            for warning in self.warnings:
                 print(f"  {warning}")
 
-        print("
-✅ Sistema básico funcional!"        return True
+        print("\n✅ Sistema básico funcional!")
+        return True
 
 async def main():
     print("🤖 ElixirMind - Quick Start Validator")
@@ -157,16 +158,15 @@ async def main():
     is_ready = await validator.run_validation()
 
     if is_ready:
-        print("
-🚀 PRÓXIMOS PASSOS:"        print("1. pip install -r requirements.txt  # Instalar dependências")
-        print("2. python setup_wizard.py          # Executar configuração")
-        print("3. python minimal_bot.py           # Testar bot básico")
-        print("4. streamlit run dashboard/app.py  # Abrir dashboard")
-        print("
-💡 Para desenvolvimento:"        print("   python main.py --mode development")
+        print("\n🚀 PRÓXIMOS PASSOS:")
+        print("1. Execute run_bot.bat para iniciar o bot")
+        print("2. Execute run_dashboard.bat para abrir o dashboard")
+        print("3. Abra Clash Royale no emulador e inicie uma batalha")
+        print("\n💡 Para desenvolvimento:")
+        print("   python main.py --mode development")
     else:
-        print("
-🔧 CORREÇÕES NECESSÁRIAS:"        print("Execute os comandos indicados acima para resolver os problemas críticos!")
+        print("\n🔧 CORREÇÕES NECESSÁRIAS:")
+        print("Execute os comandos indicados acima para resolver os problemas críticos!")
 
 if __name__ == "__main__":
     asyncio.run(main())

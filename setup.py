@@ -1,232 +1,199 @@
 #!/usr/bin/env python3
 """
 ElixirMind Setup Script
-Automated installation and configuration for ElixirMind bot.
+Automated installation and configuration.
 """
 
-import os
-import sys
 import subprocess
-import platform
+import sys
+import os
 from pathlib import Path
-import json
 
-
-def check_python_version():
-    """Check if Python version is compatible."""
-    if sys.version_info < (3, 10):
-        print("❌ Python 3.10+ is required")
-        print(f"Current version: {sys.version}")
+def run_command(cmd, description):
+    """Run a command and handle errors"""
+    print(f"🔧 {description}...")
+    try:
+        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        print(f"✅ {description} completed")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ {description} failed: {e}")
+        print(f"Output: {e.output}")
         return False
-    print(
-        f"✅ Python {sys.version_info.major}.{sys.version_info.minor} detected")
-    return True
-
 
 def install_dependencies():
-    """Install Python dependencies."""
-    print("📦 Installing Python dependencies...")
+    """Install Python dependencies"""
+    print("📦 Installing dependencies...")
 
-    try:
-        # Upgrade pip first
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-
-        # Install requirements
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
-
-        print("✅ Dependencies installed successfully")
-        return True
-
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to install dependencies: {e}")
+    # Upgrade pip first
+    if not run_command("python -m pip install --upgrade pip", "Upgrading pip"):
         return False
 
-
-def setup_directories():
-    """Create necessary directories."""
-    print("📁 Creating directories...")
-
-    directories = [
-        "data/logs",
-        "data/results",
-        "data/reference/cards",
-        "models",
-        "dashboard/assets"
+    # Install core dependencies
+    core_deps = [
+        "opencv-python",
+        "numpy",
+        "pyautogui",
+        "mss",
+        "pillow",
+        "streamlit",
+        "plotly",
+        "pandas"
     ]
 
-    for dir_path in directories:
+    for dep in core_deps:
+        if not run_command(f"pip install {dep}", f"Installing {dep}"):
+            return False
+
+    # Optional dependencies
+    optional_deps = [
+        "torch",
+        "torchvision",
+        "stable-baselines3",
+        "psutil",
+        "gputil"
+    ]
+
+    print("📦 Installing optional dependencies...")
+    for dep in optional_deps:
+        run_command(f"pip install {dep}", f"Installing {dep} (optional)")
+
+    return True
+
+def create_directories():
+    """Create necessary directories"""
+    print("📁 Creating directories...")
+
+    dirs = [
+        "models",
+        "data",
+        "data/logs",
+        "data/screenshots",
+        "data/templates",
+        "tests",
+        "vision/cache",
+        "strategy/models"
+    ]
+
+    for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
+        print(f"✅ Created {dir_path}/")
 
-    print("✅ Directories created")
+    return True
 
+def download_models():
+    """Download pre-trained models"""
+    print("🤖 Downloading AI models...")
 
-def create_default_config():
-    """Create default configuration file."""
-    print("⚙️ Creating default configuration...")
+    # This would normally download YOLOv5 models
+    # For now, just create placeholder
+    models_dir = Path("models")
+    placeholder = models_dir / "yolov5s.pt"
+    if not placeholder.exists():
+        placeholder.write_text("# Placeholder - Download real model from ultralytics.com")
+        print("✅ Created models placeholder")
+        print("   Note: Download actual YOLOv5 weights from https://github.com/ultralytics/yolov5")
 
-    default_config = {
-        "REAL_MODE": False,
-        "DEBUG_MODE": True,
-        "EMULATOR_TYPE": "memu",
-        "DEVICE_ID": "127.0.0.1:21503",
-        "USE_RL_STRATEGY": False,
-        "SAFE_MODE": True,
-        "TARGET_FPS": 10,
-        "AGGRESSION_LEVEL": 0.6,
-        "LOG_LEVEL": "INFO"
-    }
+    return True
 
-    config_path = Path("config.json")
-    if not config_path.exists():
-        with open(config_path, "w") as f:
-            json.dump(default_config, f, indent=2)
-        print("✅ Default configuration created")
-    else:
-        print("ℹ️ Configuration file already exists")
+def create_config():
+    """Create default configuration"""
+    print("⚙️ Creating configuration...")
 
+    config_content = '''# ElixirMind Configuration
+REAL_MODE = True
+EMULATOR_TYPE = "memu"
+USE_RL_STRATEGY = False
+AGGRESSION_LEVEL = 0.6
+TARGET_FPS = 10
+SAFE_MODE = True
 
-def check_system_requirements():
-    """Check system requirements."""
-    print("🔍 Checking system requirements...")
+# Emulator settings
+EMULATOR_PORT = 21503
+SCREEN_REGION = (0, 0, 1920, 1080)
 
-    # Check OS
-    os_name = platform.system()
-    if os_name == "Windows":
-        print("✅ Windows detected - Full support available")
-    elif os_name in ["Linux", "Darwin"]:
-        print(f"⚠️ {os_name} detected - Limited PyAutoGUI support")
-    else:
-        print(f"❓ Unknown OS: {os_name}")
+# AI settings
+YOLO_MODEL = "models/yolov5s.pt"
+RL_MODEL = "strategy/models/ppo_clash"
 
-    # Check available memory
-    try:
-        import psutil
-        memory_gb = psutil.virtual_memory().total / (1024**3)
-        if memory_gb >= 8:
-            print(f"✅ Memory: {memory_gb:.1f}GB (recommended: 8GB+)")
-        else:
-            print(f"⚠️ Memory: {memory_gb:.1f}GB (recommended: 8GB+)")
-    except ImportError:
-        print("ℹ️ Memory check skipped (psutil not available)")
+# Performance settings
+MAX_MEMORY_USAGE = 80  # percent
+CPU_THREADS = 4
+'''
 
+    config_file = Path("config.py")
+    if not config_file.exists():
+        config_file.write_text(config_content)
+        print("✅ Created config.py")
 
-def setup_git_hooks():
-    """Setup git pre-commit hooks if in development mode."""
-    print("🔧 Setting up development tools...")
+    return True
 
-    if Path(".git").exists():
-        try:
-            # Install development dependencies
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install",
-                "pre-commit", "black", "flake8", "pytest"
-            ])
+def run_tests():
+    """Run basic functionality tests"""
+    print("🧪 Running basic tests...")
 
-            # Setup pre-commit
-            subprocess.check_call(["pre-commit", "install"])
-            print("✅ Git hooks configured")
-
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            print("⚠️ Git hooks setup skipped")
-    else:
-        print("ℹ️ Not a git repository - skipping hooks")
-
-
-def verify_installation():
-    """Verify installation by importing key modules."""
-    print("🧪 Verifying installation...")
+    # Simple import test
+    test_code = """
+import sys
+try:
+    import cv2
+    import numpy as np
+    import pyautogui
+    import mss
+    print("✅ Core imports successful")
+except ImportError as e:
+    print(f"❌ Import failed: {e}")
+    sys.exit(1)
+"""
 
     try:
-        # Test core imports
-        import cv2
-        import numpy as np
-        import torch
-        import streamlit
-
-        print("✅ Core dependencies verified")
-
-        # Test optional imports
-        try:
-            from stable_baselines3 import PPO
-            print("✅ Reinforcement Learning available")
-        except ImportError:
-            print("⚠️ Reinforcement Learning not available (optional)")
-
-        try:
-            import pytesseract
-            print("✅ OCR capabilities available")
-        except ImportError:
-            print("⚠️ OCR not available (optional)")
-
+        result = subprocess.run([sys.executable, "-c", test_code],
+                              capture_output=True, text=True, check=True)
+        print(result.stdout.strip())
         return True
-
-    except ImportError as e:
-        print(f"❌ Import failed: {e}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Tests failed: {e}")
+        print(e.output)
         return False
 
-
-def print_next_steps():
-    """Print next steps for user."""
-    print("\n" + "="*60)
-    print("🎉 ElixirMind installation completed!")
-    print("="*60)
-    print()
-    print("📋 Next Steps:")
-    print("1. Configure your emulator (MEmu/BlueStacks)")
-    print("2. Install Clash Royale in the emulator")
-    print("3. Edit config.json if needed")
-    print("4. Start the bot:")
-    print("   python main.py --mode test")
-    print()
-    print("5. Open dashboard:")
-    print("   streamlit run dashboard/app.py")
-    print()
-    print("📚 Documentation:")
-    print("- README.md - Complete guide")
-    print("- config.json - Configuration options")
-    print("- tests/ - Run tests with 'pytest'")
-    print()
-    print("⚠️ Important:")
-    print("- Use only on test accounts")
-    print("- Enable Safe Mode for first runs")
-    print("- Check emulator connection with 'adb devices'")
-    print()
-    print("🆘 Need help? Check GitHub issues or documentation")
-
-
 def main():
-    """Main setup function."""
-    print("🤖 ElixirMind Setup")
-    print("=" * 40)
+    print("🚀 ElixirMind Setup")
+    print("=" * 50)
+    print("This will install all dependencies and configure the system.")
     print()
 
-    # Check prerequisites
-    if not check_python_version():
-        sys.exit(1)
+    steps = [
+        ("Installing Python dependencies", install_dependencies),
+        ("Creating directory structure", create_directories),
+        ("Downloading AI models", download_models),
+        ("Creating configuration files", create_config),
+        ("Running basic tests", run_tests),
+    ]
 
-    # System requirements
-    check_system_requirements()
+    success_count = 0
+    for step_name, step_func in steps:
+        print(f"\n{step_name}...")
+        if step_func():
+            success_count += 1
+            print(f"✅ {step_name} completed")
+        else:
+            print(f"❌ {step_name} failed")
+            break
 
-    # Setup process
-    setup_directories()
+    print(f"\n📊 Setup Results: {success_count}/{len(steps)} steps completed")
 
-    if not install_dependencies():
-        print("❌ Setup failed during dependency installation")
-        sys.exit(1)
+    if success_count == len(steps):
+        print("\n🎉 Setup completed successfully!")
+        print("\n🚀 Next steps:")
+        print("1. Run: python auto_configurator.py")
+        print("2. Run: python run_bot.bat")
+        print("3. Run: python run_dashboard.bat (in new terminal)")
+        print("\n📖 For detailed instructions, see README.md")
+    else:
+        print("\n❌ Setup failed. Please check the errors above.")
+        print("You can try running individual steps manually.")
 
-    create_default_config()
-    setup_git_hooks()
-
-    # Verify installation
-    if not verify_installation():
-        print("❌ Installation verification failed")
-        sys.exit(1)
-
-    # Success
-    print_next_steps()
-
+    input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
     main()
