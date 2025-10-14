@@ -21,6 +21,11 @@ class EmulatorDetector:
                 'templates': ['bluestacks_home.png', 'bluestacks_settings.png'],
                 'window_title_keywords': ['bluestacks', 'blue'],
                 'process_names': ['Bluestacks.exe', 'HD-Player.exe']
+            },
+            'ldplayer': {
+                'templates': ['ldplayer_border.png', 'ldplayer_controls.png'],
+                'window_title_keywords': ['ldplayer', 'dnplayer', 'leidian'],
+                'process_names': ['dnplayer.exe', 'ldplayer.exe', 'dnmultiplayer.exe']
             }
         }
         self.templates = {}

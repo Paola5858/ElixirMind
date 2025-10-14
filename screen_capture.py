@@ -11,7 +11,32 @@ from PIL import Image
 import mss
 import cv2
 
-from config import Config
+# Config class defined inline to avoid import issues
+
+
+class Config:
+    def __init__(self):
+        from config import load_config
+        self.config = load_config()
+        self.EMULATOR_TYPE = self.config.get("emulator_type", "memu")
+        self.TARGET_FPS = 10
+        self.CAPTURE_METHOD = "mss"
+        self.SCREENSHOT_DIR = "screenshots"
+        self.ROI_HAND = (0, 800, 1920, 1080)
+        self.ROI_BATTLEFIELD = (0, 0, 1920, 800)
+        self.ROI_ELIXIR = (1700, 900, 1900, 1000)
+        self.ROI_ENEMY_TOWERS = (0, 0, 1920, 400)
+        self.ROI_MY_TOWERS = (0, 400, 1920, 800)
+        # Add missing attributes for vision pipeline
+        self.target_resolution = (1920, 1080)
+        self.template_threshold = 0.7
+        self.roi_padding = 10
+
+    def get(self, key, default=None):
+        """Get configuration value with fallback to attributes."""
+        if hasattr(self, key):
+            return getattr(self, key)
+        return self.config.get(key, default)
 
 
 class ScreenCapture:
@@ -51,8 +76,12 @@ class ScreenCapture:
     def _find_game_window(self) -> Optional[Dict[str, int]]:
         """Find the game window or use primary monitor."""
         try:
-            # For now, use primary monitor
-            # In a real implementation, you'd use window detection
+            # Try to find emulator window first
+            window_region = self._detect_emulator_window()
+            if window_region:
+                return window_region
+
+            # Fallback to primary monitor
             monitor = self.sct.monitors[1]  # Primary monitor
 
             # Adjust for common emulator window sizes
@@ -65,12 +94,99 @@ class ScreenCapture:
                     "height": 1920,
                     "monitor": 1
                 }
+            elif self.config.EMULATOR_TYPE.lower() == "ldplayer":
+                # LDPlayer typical window size and position (1920x1080 resolution)
+                return {
+                    "top": monitor["top"] + 50,
+                    "left": monitor["left"] + 50,
+                    "width": 1920,
+                    "height": 1080,
+                    "monitor": 1
+                }
 
             return monitor
 
         except Exception as e:
             self.logger.error(f"Window detection failed: {e}")
             return None
+
+    def _detect_emulator_window(self) -> Optional[Dict[str, int]]:
+        """Detect emulator window using multiple methods."""
+        try:
+            import platform
+            if platform.system() == 'Windows':
+                return self._detect_windows_emulator_window()
+            else:
+                # For other platforms, fallback to monitor detection
+                return None
+        except ImportError:
+            self.logger.warning(
+                "Window detection not available, using monitor fallback")
+            return None
+
+    def _detect_windows_emulator_window(self) -> Optional[Dict[str, int]]:
+        """Detect emulator window on Windows."""
+        try:
+            import win32gui
+            import win32con
+
+            emulator_titles = {
+                'ldplayer': ['LDPlayer', 'dnplayer'],
+                'memu': ['MEmu', 'MEmu Player'],
+                'bluestacks': ['BlueStacks', 'HD-Player']
+            }
+
+            target_titles = emulator_titles.get(
+                self.config.EMULATOR_TYPE.lower(), [])
+
+            def callback(hwnd, windows):
+                if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    class_name = win32gui.GetClassName(hwnd)
+
+                    # Check title and class name
+                    for target in target_titles:
+                        if target.lower() in title.lower() or target.lower() in class_name.lower():
+                            left, top, right, bottom = win32gui.GetWindowRect(
+                                hwnd)
+                            width = right - left
+                            height = bottom - top
+
+                            # Filter reasonable window sizes (emulator windows)
+                            if 800 <= width <= 2560 and 600 <= height <= 1600:
+                                windows.append({
+                                    'hwnd': hwnd,
+                                    'title': title,
+                                    'class': class_name,
+                                    'left': left,
+                                    'top': top,
+                                    'width': width,
+                                    'height': height
+                                })
+
+            windows = []
+            win32gui.EnumWindows(callback, windows)
+
+            if windows:
+                # Use first found window
+                window = windows[0]
+                self.logger.info(
+                    f"Detected emulator window: {window['title']} ({window['width']}x{window['height']})")
+
+                return {
+                    "top": window['top'],
+                    "left": window['left'],
+                    "width": window['width'],
+                    "height": window['height'],
+                    "monitor": 1
+                }
+
+        except ImportError:
+            self.logger.warning("win32gui not available for window detection")
+        except Exception as e:
+            self.logger.error(f"Window detection error: {e}")
+
+        return None
 
     def capture(self) -> Optional[np.ndarray]:
         """Capture current screen frame."""
@@ -83,12 +199,28 @@ class ScreenCapture:
             if time_diff < min_interval:
                 return None
 
-            # Capture screenshot
-            screenshot = self.sct.grab(self.monitor)
+            # Try MSS capture first
+            try:
+                screenshot = self.sct.grab(self.monitor)
+                frame = np.array(screenshot)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+            except Exception as mss_error:
+                self.logger.warning(
+                    f"MSS capture failed: {mss_error}, trying fallback methods")
 
-            # Convert to numpy array
-            frame = np.array(screenshot)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+                # Fallback to pyautogui
+                try:
+                    import pyautogui
+                    screenshot = pyautogui.screenshot()
+                    frame = np.array(screenshot)
+                    # pyautogui is RGB
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    self.logger.info(
+                        "Using pyautogui fallback for screen capture")
+                except Exception as pg_error:
+                    self.logger.error(
+                        f"All capture methods failed. MSS: {mss_error}, PyAutoGUI: {pg_error}")
+                    return None
 
             # Update timing
             self.last_capture_time = current_time
