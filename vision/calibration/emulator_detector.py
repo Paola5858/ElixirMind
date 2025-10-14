@@ -24,8 +24,8 @@ class EmulatorDetector:
             },
             'ldplayer': {
                 'templates': ['ldplayer_border.png', 'ldplayer_controls.png'],
-                'window_title_keywords': ['ldplayer', 'dnplayer', 'leidian'],
-                'process_names': ['dnplayer.exe', 'ldplayer.exe', 'dnmultiplayer.exe']
+                'window_title_keywords': ['ldplayer'],
+                'process_names': ['LdVBoxHeadless.exe', 'LdBox.exe']
             }
         }
         self.templates = {}
