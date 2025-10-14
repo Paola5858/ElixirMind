@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  elixirmind:
+    build: .
+    container_name: elixirmind-bot
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./config.json:/app/config.json:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ELIXIR_REAL_MODE=false
+      - ELIXIR_DEBUG=true
+      - ELIXIR_USE_RL=false
+    ports:
+      - "8501:8501"  # Streamlit dashboard
+    networks:
+      - elixir-network
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    container_name: elixirmind-dashboard
+    command: streamlit run dashboard/app.py --server.port=8501 --server.address=0.0.0.0
+    volumes:
+      - ./data:/app/data
+      - ./dashboard:/app/dashboard
+    ports:
+      - "8502:8501"
+    networks:
+      - elixir-network
+    depends_on:
+      - elixirmind
+    restart: unless-stopped
+
+networks:
+  elixir-network:
+    driver: bridge
+
+volumes:
+  elixir-data:
+  elixir-models:

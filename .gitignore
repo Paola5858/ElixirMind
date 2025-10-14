@@ -1,0 +1,86 @@
+# ElixirMind .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ElixirMind specific
+config.json
+.env
+
+# Data and logs
+data/logs/*
+!data/logs/.gitkeep
+data/results/*
+!data/results/.gitkeep
+data/reference/cards/*
+!data/reference/cards/.gitkeep
+
+# Models
+models/*.pt
+models/*.zip
+models/*.pkl
+!models/.gitkeep
+
+# Screenshots
+*.png
+*.jpg
+*.jpeg
+!dashboard/assets/*.png
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Streamlit
+.streamlit/

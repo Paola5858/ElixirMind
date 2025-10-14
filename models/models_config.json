@@ -1,0 +1,20 @@
+{
+  "yolov5s": {
+    "url": "https://github.com/ultralytics/yolov5/releases/download/v6.2/yolov5s.pt",
+    "filename": "yolov5s.pt",
+    "hash": null,
+    "description": "YOLOv5 small model for object detection"
+  },
+  "yolov5m": {
+    "url": "https://github.com/ultralytics/yolov5/releases/download/v6.2/yolov5m.pt",
+    "filename": "yolov5m.pt",
+    "hash": null,
+    "description": "YOLOv5 medium model for better accuracy"
+  },
+  "card_detector": {
+    "url": null,
+    "filename": "card_detector.pt",
+    "hash": null,
+    "description": "Custom trained card detector model"
+  }
+}
