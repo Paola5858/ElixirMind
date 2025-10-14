@@ -470,6 +470,41 @@ R: Ajuste parâmetros de estratégia e treine o agente RL com mais dados.
 
 ---
 
+## 🔧 Problemas Comuns e Soluções
+
+### 1. O bot inicia, mas não joga nenhuma carta
+
+- **Causa Provável**: O bot não detectou que uma batalha começou ou a janela do emulador não está visível.
+- **Solução**:
+  - **Verifique se uma batalha está ativa**: O bot só age durante uma partida.
+  - **Foco na Janela**: Certifique-se de que a janela do emulador não está minimizada ou coberta por outras janelas.
+  - **Execute em Modo Depuração**: Inicie o bot com `python main.py --debug`. Isso ativará logs visuais que mostram o que o bot está "vendo". Se as detecções (elixir, cartas) falharem, a configuração de ROI pode estar incorreta para sua resolução.
+
+### 2. O emulador não é detectado
+
+- **Causa Provável**: O tipo de emulador está incorreto na configuração ou o processo do emulador não foi reconhecido.
+- **Solução**:
+  - **Verifique `config.json`**: Garanta que o valor de `EMULATOR_TYPE` corresponde ao seu emulador (`"memu"`, `"ldplayer"`, `"bluestacks"`).
+  - **Atualize as Assinaturas**: Versões mais recentes de emuladores podem usar nomes de processo diferentes. Abra `vision/calibration/emulator_detector.py` e adicione o nome do processo do seu emulador (ex: `LdBox.exe`) à lista `process_names` correspondente.
+  - **Verifique a Conexão ADB**: Execute `adb devices` no terminal para garantir que o emulador está conectado.
+
+### 3. A tela não é capturada ou aparece preta
+
+- **Causa Provável**: Problemas com o método de captura de tela ou permissões.
+- **Solução**:
+  - **Execute o Teste de Captura**: O projeto inclui um script para diagnosticar problemas de captura. Execute `python utils/capture_screen.py`. Ele testará diferentes métodos (MSS, PyAutoGUI, Win32) e informará qual funciona no seu sistema.
+  - **Execute como Administrador**: Em alguns casos, o programa pode precisar de privilégios de administrador para capturar a tela de outras aplicações.
+
+### 4. O dashboard abre, mas não mostra nenhum dado
+
+- **Causa Provável**: O bot e o dashboard não estão se comunicando, geralmente porque o bot não está em execução ou não está gerando dados.
+- **Solução**:
+  - **Inicie o Bot Primeiro**: O dashboard apenas lê os dados que o bot gera. Certifique-se de que o bot (`main.py`) está rodando e em uma batalha.
+  - **Verifique os Logs**: Olhe o console onde o bot está rodando. Se houver erros, eles podem impedir a geração de estatísticas.
+  - **Aguarde uma Batalha**: Os dados de performance (taxa de vitória, eficiência de elixir) só são gerados após o término de uma ou mais batalhas.
+
+---
+
 ## 🎖️ Créditos e Agradecimentos
 
 ### 👨‍💻 **Desenvolvido por**
