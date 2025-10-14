@@ -42,12 +42,13 @@ class StatsTracker:
         self._generate_session_report()
         logger.info("Stats Tracker shutdown")
 
-    def update_stats(self, actions: List[Dict]):
+    def update_stats(self, actions: List[Dict], game_state: Dict = None):
         """
-        Update statistics with new actions.
+        Update statistics with new actions and game state.
 
         Args:
             actions: List of action dictionaries
+            game_state: Optional game state information (elixir, towers, etc.)
         """
         current_time = time.time()
 
@@ -62,6 +63,10 @@ class StatsTracker:
             else:
                 self.stats['actions_failed'] += 1
 
+        # Update game-specific stats if game state provided
+        if game_state:
+            self._update_game_stats(game_state)
+
         # Update timing stats
         time_since_last_update = current_time - self.last_update_time
         self.stats['total_runtime'] = current_time - self.session_start_time
@@ -74,7 +79,7 @@ class StatsTracker:
 
             # Check for alerts
             if self.alert_manager:
-                from .alerts.performance_alerts import PerformanceAlerts
+                from alerts.performance_alerts import PerformanceAlerts
                 alerts = PerformanceAlerts(self.alert_manager)
                 alerts.check_performance_alerts(performance_data)
 
@@ -204,10 +209,88 @@ class StatsTracker:
         else:
             self.stats['success_rate'] = 0.0
 
+    def _update_game_stats(self, game_state: Dict):
+        """Update game-specific statistics."""
+        # Track elixir levels
+        if 'elixir' in game_state:
+            elixir = game_state['elixir']
+            self.stats['avg_elixir'] = (self.stats.get('avg_elixir', 0) * self.stats.get('elixir_samples', 0) + elixir) / (self.stats.get('elixir_samples', 0) + 1)
+            self.stats['elixir_samples'] = self.stats.get('elixir_samples', 0) + 1
+            self.stats['max_elixir'] = max(self.stats.get('max_elixir', 0), elixir)
+            self.stats['min_elixir'] = min(self.stats.get('min_elixir', 10), elixir)
+
+        # Track tower status
+        if 'enemy_towers' in game_state:
+            self.stats['enemy_towers_remaining'] = game_state['enemy_towers']
+        if 'my_towers' in game_state:
+            self.stats['my_towers_remaining'] = game_state['my_towers']
+
+        # Track battle outcomes
+        if 'battle_result' in game_state:
+            result = game_state['battle_result']
+            self.stats[f'battles_{result}'] += 1
+
+        # Track time management
+        if 'time_remaining' in game_state:
+            time_remaining = game_state['time_remaining']
+            self.stats['avg_time_remaining'] = (self.stats.get('avg_time_remaining', 0) * self.stats.get('time_samples', 0) + time_remaining) / (self.stats.get('time_samples', 0) + 1)
+            self.stats['time_samples'] = self.stats.get('time_samples', 0) + 1
+
+    def get_game_stats_report(self) -> str:
+        """
+        Generate a detailed game statistics report.
+
+        Returns:
+            Formatted game statistics report
+        """
+        report_lines = ["Game Statistics Report", "=" * 50]
+
+        stats = self.get_stats()
+
+        # Battle statistics
+        total_battles = (stats.get('battles_won', 0) + stats.get('battles_lost', 0) +
+                        stats.get('battles_draw', 0))
+        if total_battles > 0:
+            win_rate = stats.get('battles_won', 0) / total_battles
+            report_lines.append(f"Total Battles: {total_battles}")
+            report_lines.append(f"Win Rate: {win_rate:.1%}")
+            report_lines.append(f"Wins: {stats.get('battles_won', 0)}")
+            report_lines.append(f"Losses: {stats.get('battles_lost', 0)}")
+            report_lines.append(f"Draws: {stats.get('battles_draw', 0)}")
+
+        # Resource management
+        if 'avg_elixir' in stats:
+            report_lines.append("")
+            report_lines.append("Resource Management:")
+            report_lines.append(f"  Average Elixir: {stats['avg_elixir']:.1f}")
+            report_lines.append(f"  Max Elixir: {stats.get('max_elixir', 0)}")
+            report_lines.append(f"  Min Elixir: {stats.get('min_elixir', 10)}")
+
+        # Tower statistics
+        if 'enemy_towers_remaining' in stats or 'my_towers_remaining' in stats:
+            report_lines.append("")
+            report_lines.append("Tower Status:")
+            report_lines.append(f"  Enemy Towers: {stats.get('enemy_towers_remaining', 3)}")
+            report_lines.append(f"  My Towers: {stats.get('my_towers_remaining', 3)}")
+
+        # Action efficiency
+        if 'success_rate' in stats:
+            report_lines.append("")
+            report_lines.append("Action Efficiency:")
+            report_lines.append(f"  Success Rate: {stats['success_rate']:.1%}")
+            report_lines.append(f"  Total Actions: {stats.get('actions_total', 0)}")
+
+        return "\n".join(report_lines)
+
     def _generate_session_report(self):
         """Generate end-of-session report."""
-        report = self.get_performance_report()
-        logger.info("Session Performance Report:\n" + report)
+        # Performance report
+        perf_report = self.get_performance_report()
+        logger.info("Session Performance Report:\n" + perf_report)
+
+        # Game stats report
+        game_report = self.get_game_stats_report()
+        logger.info("Session Game Statistics Report:\n" + game_report)
 
         # Could save to file or send to dashboard
-        # self._save_report_to_file(report)
+        # self._save_report_to_file(perf_report + "\n\n" + game_report)

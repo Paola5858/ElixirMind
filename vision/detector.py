@@ -139,3 +139,111 @@ class Detector:
             self.cache_manager.put(cache_key, battle_active)
 
         return battle_active, debug_image
+
+    def detect_battle_end(self, screen: np.ndarray) -> bool:
+        """
+        Detects if the battle has ended by looking for an 'OK' button or victory/defeat indicators.
+        """
+        if screen is None:
+            return False
+
+        try:
+            # Convert to grayscale for template matching
+            gray_screen = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
+
+            # Look for "OK" button template
+            ok_template_path = Path('data/templates/ok_button.png')
+            if ok_template_path.exists():
+                ok_template = cv2.imread(str(ok_template_path), 0)
+                if ok_template is not None:
+                    res = cv2.matchTemplate(gray_screen, ok_template, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, _ = cv2.minMaxLoc(res)
+                    if max_val > 0.8:
+                        logger.info("Battle end detected: OK button found")
+                        return True
+
+            # Alternative: Look for victory/defeat text or crown indicators
+            # Check for crown icons (victory/defeat indicators)
+            victory_template_path = Path('data/templates/victory_crown.png')
+            defeat_template_path = Path('data/templates/defeat_crown.png')
+
+            for template_path in [victory_template_path, defeat_template_path]:
+                if template_path.exists():
+                    template = cv2.imread(str(template_path), 0)
+                    if template is not None:
+                        res = cv2.matchTemplate(gray_screen, template, cv2.TM_CCOEFF_NORMED)
+                        _, max_val, _, _ = cv2.minMaxLoc(res)
+                        if max_val > 0.7:
+                            logger.info(f"Battle end detected: {template_path.stem} found")
+                            return True
+
+            # Fallback: Check for specific color patterns in battle end screen
+            # Look for the characteristic blue/purple background of battle end screens
+            hsv = cv2.cvtColor(screen, cv2.COLOR_BGR2HSV)
+
+            # Battle end screens often have specific color ranges
+            lower_end_screen = np.array([90, 50, 50])
+            upper_end_screen = np.array([130, 255, 255])
+            mask = cv2.inRange(hsv, lower_end_screen, upper_end_screen)
+
+            # If significant portion of screen matches end screen colors
+            color_ratio = np.sum(mask > 0) / (screen.shape[0] * screen.shape[1])
+            if color_ratio > 0.3:  # 30% of screen
+                logger.info("Battle end detected: End screen color pattern found")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error in battle end detection: {e}")
+
+        return False
+
+    def _detect_elixir_presence(self, screen: np.ndarray) -> bool:
+        """Check for the presence of elixir color in its ROI."""
+        x1, y1, x2, y2 = self.config.ROI_ELIXIR
+        roi = screen[y1:y2, x1:x2]
+        hsv = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
+
+        # Pink/purple range for elixir
+        lower_purple = np.array([140, 50, 50])
+        upper_purple = np.array([170, 255, 255])
+        mask = cv2.inRange(hsv, lower_purple, upper_purple)
+
+        # If more than 5% of the ROI has the elixir color, we consider it present
+        return np.sum(mask > 0) / (roi.shape[0] * roi.shape[1]) > 0.05
+
+    def _detect_card_hand(self, screen: np.ndarray) -> bool:
+        """Check for the presence of cards in the hand ROI."""
+        x1, y1, x2, y2 = self.config.ROI_HAND
+        roi = screen[y1:y2, x1:x2]
+        gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edged = cv2.Canny(blurred, 50, 150)
+
+        # If there are significant edges, assume cards are present
+        return np.sum(edged > 0) > 500
+
+    def _detect_towers(self, screen: np.ndarray) -> bool:
+        """Check for the presence of towers in the battlefield ROI."""
+        x1, y1, x2, y2 = self.config.ROI_BATTLEFIELD
+        roi = screen[y1:y2, x1:x2]
+        gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+        edged = cv2.Canny(gray, 50, 150)
+
+        # A simple check for vertical lines, common in towers
+        return np.sum(edged > 0) > 1000
+
+    def _detect_battle_template(self, screen: np.ndarray) -> bool:
+        """Check for a battle-specific template."""
+        # This is a placeholder. It would require loading a template image.
+        # e.g., cv2.imread('data/templates/battle_indicator.png')
+        return True  # Assume true for now to make battle detection easier
+
+    def _draw_roi(self, image: np.ndarray, roi: Tuple[int, int, int, int], text: str, status: bool):
+        """Draw a rectangle for the ROI and its status on the debug image."""
+        x1, y1, x2, y2 = roi
+        color = (0, 255, 0) if status else (0, 0, 255)
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+
+        label = f"{text}: {'OK' if status else 'FAIL'}"
+        cv2.putText(image, label, (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
