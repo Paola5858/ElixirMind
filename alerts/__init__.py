@@ -1,0 +1,1 @@
+# Alerts module for ElixirMind
