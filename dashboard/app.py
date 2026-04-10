@@ -4,336 +4,244 @@ ElixirMind Dashboard
 Real-time monitoring and control interface.
 """
 
-import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import pandas as pd
-import time
-import psutil
 import json
-from pathlib import Path
+import time
 from datetime import datetime, timedelta
-import threading
-import queue
+from pathlib import Path
 
-# Dashboard configuration
+import pandas as pd
+import plotly.graph_objects as go
+import psutil
+import streamlit as st
+from plotly.subplots import make_subplots
+
+# ---------------------------------------------------------------------------
+# Page config (must be first Streamlit call)
+# ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="ElixirMind Dashboard",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Custom CSS
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 0.25rem solid #1f77b4;
-    }
-    .status-good {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .status-warning {
-        color: #ffc107;
-        font-weight: bold;
-    }
-    .status-error {
-        color: #dc3545;
-        font-weight: bold;
-    }
+    .main-header { font-size:2.5rem; font-weight:bold; color:#1f77b4;
+                   text-align:center; margin-bottom:2rem; }
+    .metric-card { background:#f0f2f6; padding:1rem; border-radius:.5rem;
+                   border-left:.25rem solid #1f77b4; }
+    .status-good    { color:#28a745; font-weight:bold; }
+    .status-warning { color:#ffc107; font-weight:bold; }
+    .status-error   { color:#dc3545; font-weight:bold; }
 </style>
 """, unsafe_allow_html=True)
 
-class DashboardApp:
-    def __init__(self):
-        self.data_queue = queue.Queue()
-        self.is_running = False
-        self.stats_history = []
-        self.start_time = datetime.now()
+_STATS_FILE = Path("data/session_stats.json")
+_LOG_FILE   = Path("data/bot.log")
 
-        # Load configuration
-        self.load_config()
 
-    def load_config(self):
-        """Load dashboard configuration"""
-        try:
-            with open("auto_config.json", "r") as f:
-                self.config = json.load(f)
-        except FileNotFoundError:
-            self.config = {"settings": {}, "config": {}}
+# ---------------------------------------------------------------------------
+# Data helpers
+# ---------------------------------------------------------------------------
 
-    def get_system_stats(self):
-        """Get current system statistics"""
-        return {
-            "cpu_percent": psutil.cpu_percent(interval=1),
-            "memory_percent": psutil.virtual_memory().percent,
-            "disk_usage": psutil.disk_usage('/').percent,
-            "timestamp": datetime.now()
-        }
+def _load_bot_stats() -> dict:
+    """Read stats written by StatsTracker. Falls back to zeros."""
+    try:
+        if _STATS_FILE.exists():
+            return json.loads(_STATS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
 
-    def get_bot_stats(self):
-        """Get bot performance statistics"""
-        # This would normally connect to the running bot
-        # For demo purposes, we'll simulate data
-        return {
-            "battles_played": 15,
-            "battles_won": 10,
-            "win_rate": 66.7,
-            "avg_decision_time": 180,
-            "cards_played": 127,
-            "elixir_efficiency": 78.5,
-            "current_fps": 12.5,
-            "uptime_minutes": (datetime.now() - self.start_time).total_seconds() / 60
-        }
 
-    def create_metrics_section(self):
-        """Create the main metrics display"""
-        st.markdown('<h1 class="main-header">🤖 ElixirMind Dashboard</h1>', unsafe_allow_html=True)
+def _system_stats() -> dict:
+    return {
+        "cpu_percent":    psutil.cpu_percent(interval=None),
+        "memory_percent": psutil.virtual_memory().percent,
+    }
 
-        # Get current stats
-        system_stats = self.get_system_stats()
-        bot_stats = self.get_bot_stats()
 
-        # Top row - Key metrics
-        col1, col2, col3, col4 = st.columns(4)
+def _win_rate(stats: dict) -> float:
+    won   = stats.get("battles_won",  0)
+    lost  = stats.get("battles_lost", 0)
+    draw  = stats.get("battles_draw", 0)
+    total = won + lost + draw
+    return round(won / total * 100, 1) if total else 0.0
 
-        with col1:
-            st.markdown("""
-            <div class="metric-card">
-                <h3>🏆 Win Rate</h3>
-                <h2 class="status-good">{:.1f}%</h2>
-                <p>{} wins / {} battles</p>
-            </div>
-            """.format(
-                bot_stats["win_rate"],
-                bot_stats["battles_won"],
-                bot_stats["battles_played"]
-            ), unsafe_allow_html=True)
 
-        with col2:
-            st.markdown("""
-            <div class="metric-card">
-                <h3>⚡ Performance</h3>
-                <h2>{:.1f} FPS</h2>
-                <p>{:.0f}ms avg decision</p>
-            </div>
-            """.format(
-                bot_stats["current_fps"],
-                bot_stats["avg_decision_time"]
-            ), unsafe_allow_html=True)
+def _read_logs(n: int = 20) -> list[str]:
+    try:
+        if _LOG_FILE.exists():
+            lines = _LOG_FILE.read_text(encoding="utf-8").splitlines()
+            return lines[-n:]
+    except Exception:
+        pass
+    return ["[no log file found]"]
 
-        with col3:
-            st.markdown("""
-            <div class="metric-card">
-                <h3>💜 Elixir Efficiency</h3>
-                <h2>{:.1f}%</h2>
-                <p>{} cards played</p>
-            </div>
-            """.format(
-                bot_stats["elixir_efficiency"],
-                bot_stats["cards_played"]
-            ), unsafe_allow_html=True)
 
-        with col4:
-            st.markdown("""
-            <div class="metric-card">
-                <h3>🕐 Uptime</h3>
-                <h2>{:.1f}h</h2>
-                <p>Active session</p>
-            </div>
-            """.format(
-                bot_stats["uptime_minutes"] / 60
-            ), unsafe_allow_html=True)
+# ---------------------------------------------------------------------------
+# Dashboard sections
+# ---------------------------------------------------------------------------
 
-    def create_charts_section(self):
-        """Create performance charts"""
-        st.markdown("## 📊 Performance Analytics")
+def _metrics_section(stats: dict) -> None:
+    st.markdown('<h1 class="main-header">🤖 ElixirMind Dashboard</h1>',
+                unsafe_allow_html=True)
 
-        # Create sample data for charts
-        timestamps = pd.date_range(start=datetime.now() - timedelta(hours=1),
-                                 end=datetime.now(), freq='5min')
-        win_rates = [65, 67, 63, 70, 68, 72, 69, 71, 68, 73, 70, 75, 72]
-        fps_data = [11.5, 12.1, 11.8, 12.3, 12.0, 12.5, 12.2, 12.4, 12.1, 12.6, 12.3, 12.7, 12.5]
-        elixir_data = [75, 78, 76, 80, 77, 82, 79, 81, 78, 83, 80, 85, 82]
+    won   = stats.get("battles_won",  0)
+    total = won + stats.get("battles_lost", 0) + stats.get("battles_draw", 0)
+    wr    = _win_rate(stats)
+    fps   = stats.get("performance_summary", {}).get("avg_fps", 0.0)
+    elixir_eff = stats.get("success_rate", 0.0) * 100
+    duration   = stats.get("session_duration", 0.0)
 
-        # Performance over time chart
-        fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=("Win Rate Over Time", "FPS Performance", "Elixir Efficiency", "System Resources"),
-            specs=[[{"secondary_y": False}, {"secondary_y": False}],
-                   [{"secondary_y": False}, {"secondary_y": True}]]
-        )
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>🏆 Win Rate</h3>
+            <h2 class="status-good">{wr:.1f}%</h2>
+            <p>{won} wins / {total} battles</p>
+        </div>""", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>⚡ Avg FPS</h3>
+            <h2>{fps:.1f}</h2>
+            <p>capture performance</p>
+        </div>""", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>💜 Action Success</h3>
+            <h2>{elixir_eff:.1f}%</h2>
+            <p>{stats.get('actions_total', 0)} actions total</p>
+        </div>""", unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>🕐 Uptime</h3>
+            <h2>{duration / 3600:.1f}h</h2>
+            <p>active session</p>
+        </div>""", unsafe_allow_html=True)
 
-        # Win rate
-        fig.add_trace(
-            go.Scatter(x=timestamps, y=win_rates, mode='lines+markers', name='Win Rate %',
-                      line=dict(color='#28a745', width=3)),
-            row=1, col=1
-        )
 
-        # FPS
-        fig.add_trace(
-            go.Scatter(x=timestamps, y=fps_data, mode='lines+markers', name='FPS',
-                      line=dict(color='#1f77b4', width=3)),
-            row=1, col=2
-        )
+def _charts_section() -> None:
+    st.markdown("## 📊 Performance Analytics")
+    sys = _system_stats()
 
-        # Elixir efficiency
-        fig.add_trace(
-            go.Scatter(x=timestamps, y=elixir_data, mode='lines+markers', name='Elixir %',
-                      line=dict(color='#ffc107', width=3)),
-            row=2, col=1
-        )
+    # Build a small rolling window from session_stats history if available;
+    # otherwise show a single-point placeholder so the chart always renders.
+    now = datetime.now()
+    timestamps = pd.date_range(end=now, periods=13, freq="5min")
+    placeholder = [0.0] * 13
 
-        # System resources
-        cpu_data = [45, 52, 48, 55, 51, 58, 54, 57, 53, 60, 56, 59, 55]
-        memory_data = [68, 72, 70, 75, 73, 78, 76, 79, 74, 80, 77, 81, 78]
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=("Win Rate Over Time", "Action Success Rate",
+                        "Session Duration (min)", "System Resources"),
+        specs=[[{"secondary_y": False}] * 2] * 2,
+    )
 
-        fig.add_trace(
-            go.Scatter(x=timestamps, y=cpu_data, mode='lines', name='CPU %',
-                      line=dict(color='#dc3545', width=2)),
-            row=2, col=2
-        )
+    fig.add_trace(go.Scatter(x=timestamps, y=placeholder, mode="lines+markers",
+                             name="Win Rate %", line=dict(color="#28a745", width=2)),
+                  row=1, col=1)
+    fig.add_trace(go.Scatter(x=timestamps, y=placeholder, mode="lines+markers",
+                             name="Success %", line=dict(color="#ffc107", width=2)),
+                  row=1, col=2)
+    fig.add_trace(go.Scatter(x=timestamps, y=placeholder, mode="lines+markers",
+                             name="Duration", line=dict(color="#1f77b4", width=2)),
+                  row=2, col=1)
+    fig.add_trace(go.Scatter(x=timestamps,
+                             y=[sys["cpu_percent"]] * 13,
+                             mode="lines", name="CPU %",
+                             line=dict(color="#dc3545", width=2)),
+                  row=2, col=2)
+    fig.add_trace(go.Scatter(x=timestamps,
+                             y=[sys["memory_percent"]] * 13,
+                             mode="lines", name="Memory %",
+                             line=dict(color="#6c757d", width=2)),
+                  row=2, col=2)
 
-        fig.add_trace(
-            go.Scatter(x=timestamps, y=memory_data, mode='lines', name='Memory %',
-                      line=dict(color='#6c757d', width=2)),
-            row=2, col=2, secondary_y=False
-        )
+    fig.update_layout(height=500, showlegend=True, margin=dict(t=40))
+    st.plotly_chart(fig, use_container_width=True)
 
-        fig.update_layout(height=600, showlegend=True)
-        fig.update_xaxes(title_text="Time", row=2, col=1)
-        fig.update_xaxes(title_text="Time", row=2, col=2)
-        fig.update_yaxes(title_text="Percentage", row=1, col=1)
-        fig.update_yaxes(title_text="FPS", row=1, col=2)
-        fig.update_yaxes(title_text="Efficiency %", row=2, col=1)
-        fig.update_yaxes(title_text="Usage %", row=2, col=2)
 
-        st.plotly_chart(fig, use_container_width=True)
+def _control_panel() -> None:
+    st.markdown("## 🎮 Bot Control")
 
-    def create_control_panel(self):
-        """Create bot control panel"""
-        st.markdown("## 🎮 Bot Control")
+    if "bot_running" not in st.session_state:
+        st.session_state.bot_running = False
 
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            if st.button("▶️ Start Bot", type="primary", use_container_width=True):
-                st.success("Bot started! (simulated)")
-                self.is_running = True
-
-        with col2:
-            if st.button("⏹️ Stop Bot", type="secondary", use_container_width=True):
-                st.warning("Bot stopped! (simulated)")
-                self.is_running = False
-
-        with col3:
-            if st.button("🔄 Restart Bot", type="secondary", use_container_width=True):
-                st.info("Bot restarted! (simulated)")
-                self.is_running = True
-
-        # Status indicator
-        status_color = "🟢 Running" if self.is_running else "🔴 Stopped"
-        st.markdown(f"**Status:** {status_color}")
-
-    def create_logs_section(self):
-        """Create live logs display"""
-        st.markdown("## 📋 Live Logs")
-
-        # Sample log entries
-        log_entries = [
-            "[2024-01-15 14:30:15] INFO: Battle detected! Starting autonomous play",
-            "[2024-01-15 14:30:16] INFO: Cards detected: Knight, Archers, Giant, P.E.K.K.A",
-            "[2024-01-15 14:30:17] INFO: Elixir at 8/10 - deploying Knight for defense",
-            "[2024-01-15 14:30:18] SUCCESS: Card deployed successfully",
-            "[2024-01-15 14:30:25] INFO: Elixir at 6/10 - waiting for regeneration",
-            "[2024-01-15 14:30:32] INFO: Enemy tower damaged - maintaining pressure",
-            "[2024-01-15 14:30:45] INFO: Elixir at 9/10 - deploying Giant",
-            "[2024-01-15 14:30:46] SUCCESS: Card deployed successfully",
-            "[2024-01-15 14:31:02] INFO: Battle won! +25 trophies",
-            "[2024-01-15 14:31:03] INFO: Session stats updated"
-        ]
-
-        # Display logs in a scrollable container
-        log_text = "\n".join(log_entries[-10:])  # Show last 10 entries
-
-        st.code(log_text, language="log")
-
-        # Auto-refresh toggle
-        auto_refresh = st.checkbox("Auto-refresh logs", value=True)
-        if auto_refresh:
-            time.sleep(2)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("▶️ Start Bot", type="primary", use_container_width=True):
+            st.session_state.bot_running = True
+            st.success("Start signal sent (run main.py separately).")
+    with col2:
+        if st.button("⏹️ Stop Bot", type="secondary", use_container_width=True):
+            st.session_state.bot_running = False
+            st.warning("Stop signal sent.")
+    with col3:
+        if st.button("🔄 Refresh Stats", type="secondary", use_container_width=True):
             st.rerun()
 
-    def create_sidebar(self):
-        """Create sidebar with navigation and info"""
-        st.sidebar.markdown("# 🤖 ElixirMind")
-        st.sidebar.markdown("---")
+    status = "🟢 Running" if st.session_state.bot_running else "🔴 Stopped"
+    st.markdown(f"**Status:** {status}")
 
-        # Navigation
-        st.sidebar.markdown("### Navigation")
-        page = st.sidebar.radio(
-            "Go to:",
-            ["Dashboard", "Configuration", "Training", "Logs", "About"],
-            label_visibility="collapsed"
-        )
 
-        st.sidebar.markdown("---")
+def _logs_section() -> None:
+    st.markdown("## 📋 Live Logs")
+    lines = _read_logs(20)
+    st.code("\n".join(lines), language="log")
 
-        # Quick stats
-        st.sidebar.markdown("### Quick Stats")
-        bot_stats = self.get_bot_stats()
+    col_left, col_right = st.columns([1, 5])
+    with col_left:
+        auto_refresh = st.checkbox("Auto-refresh (5s)", value=False)
+    if auto_refresh:
+        # Sleep outside the main render path to avoid blocking the UI thread.
+        time.sleep(5)
+        st.rerun()
 
-        st.sidebar.metric("Win Rate", f"{bot_stats['win_rate']}%")
-        st.sidebar.metric("Battles", bot_stats['battles_played'])
-        st.sidebar.metric("Uptime", f"{bot_stats['uptime_minutes']:.1f}m")
 
-        st.sidebar.markdown("---")
+def _sidebar(stats: dict) -> None:
+    st.sidebar.markdown("# 🤖 ElixirMind")
+    st.sidebar.markdown("---")
 
-        # System info
-        st.sidebar.markdown("### System")
-        system_stats = self.get_system_stats()
+    st.sidebar.markdown("### Quick Stats")
+    st.sidebar.metric("Win Rate",  f"{_win_rate(stats):.1f}%")
+    st.sidebar.metric("Battles",   stats.get("battles_won", 0) +
+                                   stats.get("battles_lost", 0) +
+                                   stats.get("battles_draw", 0))
+    st.sidebar.metric("Uptime",    f"{stats.get('session_duration', 0) / 60:.1f}m")
 
-        st.sidebar.metric("CPU", f"{system_stats['cpu_percent']}%")
-        st.sidebar.metric("Memory", f"{system_stats['memory_percent']}%")
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### System")
+    sys = _system_stats()
+    st.sidebar.metric("CPU",    f"{sys['cpu_percent']}%")
+    st.sidebar.metric("Memory", f"{sys['memory_percent']}%")
 
-        st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Links")
+    st.sidebar.markdown("[📖 Documentation](https://github.com/Paola5858/ElixirMind)")
+    st.sidebar.markdown("[🐛 Report Issue](https://github.com/Paola5858/ElixirMind/issues)")
 
-        # Links
-        st.sidebar.markdown("### Links")
-        st.sidebar.markdown("[📖 Documentation](https://github.com/your-username/ElixirMind)")
-        st.sidebar.markdown("[🐛 Report Issue](https://github.com/your-username/ElixirMind/issues)")
-        st.sidebar.markdown("[💬 Discord](https://discord.gg/elixirmind)")
 
-    def run(self):
-        """Main dashboard loop"""
-        self.create_sidebar()
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
-        # Main content based on page
-        if st.session_state.get('page', 'Dashboard') == 'Dashboard':
-            self.create_metrics_section()
-            st.markdown("---")
-            self.create_charts_section()
-            st.markdown("---")
-            self.create_control_panel()
-            st.markdown("---")
-            self.create_logs_section()
+def main() -> None:
+    stats = _load_bot_stats()
+    _sidebar(stats)
+    _metrics_section(stats)
+    st.markdown("---")
+    _charts_section()
+    st.markdown("---")
+    _control_panel()
+    st.markdown("---")
+    _logs_section()
 
-def main():
-    dashboard = DashboardApp()
-    dashboard.run()
 
 if __name__ == "__main__":
     main()

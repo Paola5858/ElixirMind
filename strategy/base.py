@@ -1,232 +1,150 @@
 """
-Base Strategy: Abstract base for all strategies.
+Base Strategy: Decision engine for the bot.
+
+Improvements vs previous version:
+- decide_actions() returns List[Action] (typed), not List[Dict].
+- GameState is imported from core.types — single source of truth.
+- Strategy is a concrete default implementation; subclasses override
+  decide_actions() for custom behaviour (heuristic, RL, etc.).
+- Elixir simulation is clearly marked as a placeholder.
 """
-import random
+
+from __future__ import annotations
+
 import logging
-from typing import List, Dict, Any, Optional
+import random
+from typing import List, Optional
+
 import numpy as np
-from dataclasses import dataclass
+
+from core.types import Action, ActionType, GameState
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class GameState:
-    """Represents the current game state."""
-    elixir: float = 0.0
-    enemy_towers: int = 3
-    my_towers: int = 3
-    enemy_king_tower: bool = True
-    my_king_tower: bool = True
-    time_remaining: int = 180  # seconds
-    cards_in_hand: List[str] = None  # Card names/types
-
-    def __post_init__(self):
-        if self.cards_in_hand is None:
-            self.cards_in_hand = []
-
 class Strategy:
-    def __init__(self, config):
+    def __init__(self, config: dict) -> None:
         self.config = config
         self.game_state = GameState()
-        self.last_elixir_detection = 0.0
-        self.action_history = []  # Track recent actions
+        self._last_elixir: float = 0.0
+        self._action_history: List[Action] = []
 
-    def initialize(self):
-        """Initialize the strategy."""
-        logger.info("Base Strategy initialized.")
+    def initialize(self) -> None:
+        logger.info("Strategy initialized.")
 
-    def shutdown(self):
-        """Shutdown the strategy."""
-        logger.info("Base Strategy shutdown.")
+    def shutdown(self) -> None:
+        logger.info("Strategy shut down.")
 
-    def decide_actions(self, screen: np.ndarray, detector: Optional[Any] = None) -> List[Dict[str, Any]]:
-        """
-        Decide actions based on the screen and current game state.
-        Enhanced strategy with better decision logic.
-        """
-        actions = []
-
-        # Update game state from screen analysis
+    def decide_actions(
+        self, screen: np.ndarray, detector=None
+    ) -> List[Action]:
+        """Return a list of Actions for the current frame."""
         self._update_game_state(screen, detector)
 
-        # Analyze opponent and make strategic decisions
-        strategic_actions = self._analyze_game_situation()
-        actions.extend(strategic_actions)
+        actions: List[Action] = []
+        actions.extend(self._phase_actions())
+        actions.extend(self._tactical_actions())
 
-        # Add tactical actions based on current state
-        tactical_actions = self._decide_tactical_actions()
-        actions.extend(tactical_actions)
-
-        # Update action history
-        self.action_history.extend(actions)
-        self.action_history = self.action_history[-10:]  # Keep last 10 actions
-
+        # Keep a short history for future context-aware decisions
+        self._action_history = (self._action_history + actions)[-10:]
         return actions
 
-    def _update_game_state(self, screen: np.ndarray, detector: Optional[Any]):
-        """Update game state from screen analysis."""
+    # ------------------------------------------------------------------
+    # Game-state update
+    # ------------------------------------------------------------------
+
+    def _update_game_state(self, screen: np.ndarray, detector) -> None:
+        """Update internal GameState from screen. Elixir is simulated until
+        real OCR is wired in."""
         try:
-            # Detect elixir level
-            if detector and hasattr(detector, '_detect_elixir_presence'):
-                # This would need proper OCR/text recognition for actual elixir values
-                # For now, use a simple estimation
-                self.game_state.elixir = min(
-                    10.0, self.last_elixir_detection + 0.5)
-                self.last_elixir_detection = self.game_state.elixir
-
-            # Estimate time remaining (simplified)
+            # Placeholder: increment elixir by 0.5 per tick, cap at 10
+            self.game_state.elixir = min(10.0, self._last_elixir + 0.5)
+            self._last_elixir = self.game_state.elixir
             self.game_state.time_remaining = max(
-                0, self.game_state.time_remaining - 1)
+                0, self.game_state.time_remaining - 1
+            )
+        except Exception:
+            logger.exception("Error updating game state.")
 
-        except Exception as e:
-            logger.error(f"Error updating game state: {e}")
+    # ------------------------------------------------------------------
+    # Phase-based strategy
+    # ------------------------------------------------------------------
 
-    def _analyze_game_situation(self) -> List[Dict[str, Any]]:
-        """Analyze the overall game situation and make strategic decisions."""
-        actions = []
+    def _phase_actions(self) -> List[Action]:
+        t = self.game_state.time_remaining
+        if t > 150:
+            return self._early_game()
+        if t > 60:
+            return self._mid_game()
+        return self._late_game()
 
-        # Early game strategy (first 30 seconds)
-        if self.game_state.time_remaining > 150:
-            actions.extend(self._early_game_strategy())
+    def _early_game(self) -> List[Action]:
+        if self.game_state.elixir >= 4 and self._should_defend():
+            return [self._defensive_action()]
+        return []
 
-        # Mid game strategy
-        elif self.game_state.time_remaining > 60:
-            actions.extend(self._mid_game_strategy())
+    def _mid_game(self) -> List[Action]:
+        if self.game_state.elixir >= 5 and self._should_attack():
+            return [self._offensive_action()]
+        return []
 
-        # Late game strategy
-        else:
-            actions.extend(self._late_game_strategy())
-
-        return actions
-
-    def _early_game_strategy(self) -> List[Dict[str, Any]]:
-        """Early game: Focus on defense and economy."""
-        actions = []
-
-        if self.game_state.elixir >= 4:
-            # Prioritize defensive plays early
-            if self._should_defend():
-                actions.append(self._create_defensive_action())
-
-        return actions
-
-    def _mid_game_strategy(self) -> List[Dict[str, Any]]:
-        """Mid game: Balance offense and defense."""
-        actions = []
-
-        if self.game_state.elixir >= 5:
-            # More aggressive plays
-            if self._should_attack():
-                actions.append(self._create_offensive_action())
-
-        return actions
-
-    def _late_game_strategy(self) -> List[Dict[str, Any]]:
-        """Late game: Go for the win."""
-        actions = []
-
+    def _late_game(self) -> List[Action]:
         if self.game_state.elixir >= 3:
-            # Desperate measures - use whatever is available
-            actions.append(self._create_aggressive_action())
+            return [self._aggressive_action()]
+        return []
 
-        return actions
+    # ------------------------------------------------------------------
+    # Tactical layer
+    # ------------------------------------------------------------------
 
-    def _decide_tactical_actions(self) -> List[Dict[str, Any]]:
-        """Make tactical decisions based on current elixir and situation."""
-        actions = []
+    def _tactical_actions(self) -> List[Action]:
+        if self.game_state.elixir < 4:
+            return []
+        card_index = self._choose_card()
+        position   = self._choose_position()
+        if card_index is None or position is None:
+            return []
+        self.game_state.elixir -= 4  # simplified cost
+        return [Action(type=ActionType.PLAY_CARD, card_index=card_index, position=position)]
 
-        # Basic elixir-based decision making
-        if self.game_state.elixir >= 4:
-            logger.info(
-                f"Sufficient elixir ({self.game_state.elixir:.1f}). Deciding to play a card.")
-
-            # Choose card and position based on strategy
-            card_index = self._choose_best_card()
-            position = self._choose_best_position()
-
-            if card_index is not None and position is not None:
-                actions.append({
-                    'type': 'play_card',
-                    'card_index': card_index,
-                    'position': position
-                })
-                self.game_state.elixir -= 4  # Simplified elixir cost
-
-        return actions
+    # ------------------------------------------------------------------
+    # Decision helpers
+    # ------------------------------------------------------------------
 
     def _should_defend(self) -> bool:
-        """Determine if defensive action is needed."""
-        # Simple heuristic: defend if enemy towers are stronger
         return self.game_state.enemy_towers > self.game_state.my_towers
 
     def _should_attack(self) -> bool:
-        """Determine if offensive action is warranted."""
-        # Attack if we have elixir advantage or time pressure
-        elixir_advantage = self.game_state.elixir > 5
-        time_pressure = self.game_state.time_remaining < 90
-        return elixir_advantage or time_pressure
+        return self.game_state.elixir > 5 or self.game_state.time_remaining < 90
 
-    def _create_defensive_action(self) -> Dict[str, Any]:
-        """Create a defensive action."""
-        # Place defensive units near own towers
-        card_index = random.randint(0, 3)
-        # Defensive positions near own side
-        target_x = random.randint(200, 800)
-        target_y = random.randint(600, 800)
+    def _defensive_action(self) -> Action:
+        return Action(
+            type=ActionType.PLAY_CARD,
+            card_index=random.randint(0, 3),
+            position=(random.randint(200, 800), random.randint(600, 800)),
+        )
 
-        return {
-            'type': 'play_card',
-            'card_index': card_index,
-            'position': (target_x, target_y)
-        }
+    def _offensive_action(self) -> Action:
+        return Action(
+            type=ActionType.PLAY_CARD,
+            card_index=random.randint(0, 3),
+            position=(random.randint(400, 1520), random.randint(200, 500)),
+        )
 
-    def _create_offensive_action(self) -> Dict[str, Any]:
-        """Create an offensive action."""
-        card_index = random.randint(0, 3)
-        # Offensive positions on enemy side
-        target_x = random.randint(400, 1520)
-        target_y = random.randint(200, 500)
+    def _aggressive_action(self) -> Action:
+        return Action(
+            type=ActionType.PLAY_CARD,
+            card_index=random.randint(0, 3),
+            position=(random.randint(600, 1320), random.randint(100, 300)),
+        )
 
-        return {
-            'type': 'play_card',
-            'card_index': card_index,
-            'position': (target_x, target_y)
-        }
-
-    def _create_aggressive_action(self) -> Dict[str, Any]:
-        """Create an aggressive end-game action."""
-        card_index = random.randint(0, 3)
-        # Target enemy towers directly
-        target_x = random.randint(600, 1320)
-        target_y = random.randint(100, 300)
-
-        return {
-            'type': 'play_card',
-            'card_index': card_index,
-            'position': (target_x, target_y)
-        }
-
-    def _choose_best_card(self) -> Optional[int]:
-        """Choose the best card to play based on current situation."""
-        # Simple random selection for now
-        # In a real implementation, this would consider card synergies, elixir costs, etc.
+    def _choose_card(self) -> Optional[int]:
         return random.randint(0, 3)
 
-    def _choose_best_position(self) -> Optional[tuple]:
-        """Choose the best position to play a card."""
-        # Position based on current strategy phase
-        if self.game_state.time_remaining > 150:  # Early game
-            # Defensive positions
-            x = random.randint(200, 800)
-            y = random.randint(600, 800)
-        elif self.game_state.time_remaining > 60:  # Mid game
-            # Balanced positions
-            x = random.randint(400, 1520)
-            y = random.randint(300, 600)
-        else:  # Late game
-            # Aggressive positions
-            x = random.randint(600, 1320)
-            y = random.randint(100, 400)
-
-        return (x, y)
+    def _choose_position(self) -> Optional[tuple]:
+        t = self.game_state.time_remaining
+        if t > 150:
+            return (random.randint(200, 800),  random.randint(600, 800))
+        if t > 60:
+            return (random.randint(400, 1520), random.randint(300, 600))
+        return     (random.randint(600, 1320), random.randint(100, 400))

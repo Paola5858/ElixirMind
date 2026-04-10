@@ -1,118 +1,100 @@
 """
-Actions Controller: Handles bot actions and inputs.
+Actions Controller: Executes bot actions and returns typed results.
+
+Improvements vs previous version:
+- execute_actions() returns List[ActionResult] instead of None.
+- Card positions read from config with fallback to 1920×1080 defaults.
+- play_card and use_spell share one implementation (_drag_card).
+- Each action result carries success/error for StatsTracker.
 """
-import pyautogui
-import time
+
+from __future__ import annotations
+
 import logging
-from typing import List, Dict, Any
+import time
+from typing import List
+
+import pyautogui
+
+from core.types import Action, ActionResult, ActionType
 
 logger = logging.getLogger(__name__)
 
-class Controller:
-    def __init__(self, config):
-        self.config = config
-        # Define card positions based on a standard 1920x1080 resolution
-        # These should ideally come from config
-        self.card_positions = [
-            (780, 920),  # Card 1
-            (960, 920),  # Card 2
-            (1140, 920),  # Card 3
-            (1320, 920)  # Card 4
-        ]
+_DEFAULT_CARD_POSITIONS = [
+    (780,  920),
+    (960,  920),
+    (1140, 920),
+    (1320, 920),
+]
 
-    def initialize(self):
-        """Initialize the controller."""
-        logger.info("Actions Controller initialized.")
-        # Configure pyautogui safety features
+
+class Controller:
+    def __init__(self, config: dict) -> None:
+        self.config = config
+        self.card_positions: List[tuple] = config.get(
+            "card_positions", _DEFAULT_CARD_POSITIONS
+        )
+
+    def initialize(self) -> None:
         pyautogui.FAILSAFE = True
         pyautogui.PAUSE = 0.05
+        logger.info("Controller initialized.")
 
-    def shutdown(self):
-        """Shutdown the controller."""
-        logger.info("Actions Controller shutdown.")
+    def shutdown(self) -> None:
+        logger.info("Controller shut down.")
 
-    def execute_actions(self, actions: List[Dict[str, Any]]):
-        """
-        Execute a list of actions.
-        Supported action types:
-        - 'play_card': {'type': 'play_card', 'card_index': 0-3, 'position': (x, y)}
-        - 'use_spell': {'type': 'use_spell', 'card_index': 0-3, 'position': (x, y)}
-        - 'upgrade_card': {'type': 'upgrade_card', 'card_index': 0-3}
-        - 'wait': {'type': 'wait', 'duration': seconds}
-        """
-        if not actions:
-            return
-
+    def execute_actions(self, actions: List[Action]) -> List[ActionResult]:
+        """Execute actions and return one ActionResult per action."""
+        results: List[ActionResult] = []
         for action in actions:
-            action_type = action.get("type")
-            logger.info(f"Executing action: {action}")
+            result = self._execute_one(action)
+            results.append(result)
+            if not result.success:
+                logger.warning("Action failed: %s — %s", action, result.error)
+        return results
 
-            try:
-                if action_type == "play_card":
-                    self._execute_play_card(action)
-                elif action_type == "use_spell":
-                    self._execute_use_spell(action)
-                elif action_type == "upgrade_card":
-                    self._execute_upgrade_card(action)
-                elif action_type == "wait":
-                    self._execute_wait(action)
-                else:
-                    logger.warning(f"Unknown action type: {action_type}")
-            except Exception as e:
-                logger.error(f"Failed to execute action {action}: {e}")
+    # ------------------------------------------------------------------
+    # Private
+    # ------------------------------------------------------------------
 
-    def _execute_play_card(self, action: Dict[str, Any]):
-        """Execute playing a card at a specific position."""
-        card_index = action.get("card_index")
-        target_pos = action.get("position")
+    def _execute_one(self, action: Action) -> ActionResult:
+        try:
+            if action.type in (ActionType.PLAY_CARD, ActionType.USE_SPELL):
+                self._drag_card(action)
+            elif action.type == ActionType.UPGRADE_CARD:
+                self._upgrade_card(action)
+            elif action.type == ActionType.WAIT:
+                self._wait(action)
+            else:
+                return ActionResult(action=action, success=False,
+                                    error=f"Unknown action type: {action.type}")
+            return ActionResult(action=action, success=True)
+        except Exception as exc:
+            return ActionResult(action=action, success=False, error=str(exc))
 
-        if card_index is not None and target_pos is not None and 0 <= card_index < len(self.card_positions):
-            card_pos = self.card_positions[card_index]
+    def _drag_card(self, action: Action) -> None:
+        idx = action.card_index
+        if not (0 <= idx < len(self.card_positions)):
+            raise ValueError(f"card_index {idx} out of range")
+        if action.position is None:
+            raise ValueError("position is required for play_card/use_spell")
 
-            # Perform the drag and drop
-            pyautogui.moveTo(card_pos[0], card_pos[1])
-            pyautogui.dragTo(
-                target_pos[0], target_pos[1], duration=0.25, tween=pyautogui.easeOutQuad)
-            logger.info(f"Played card {card_index} at {target_pos}")
-        else:
-            logger.warning(f"Invalid card_index {card_index} or position {target_pos}")
+        src = self.card_positions[idx]
+        dst = action.position
+        pyautogui.moveTo(src[0], src[1])
+        pyautogui.dragTo(dst[0], dst[1], duration=0.25, tween=pyautogui.easeOutQuad)
+        logger.info("Dragged card %d -> %s", idx, dst)
 
-    def _execute_use_spell(self, action: Dict[str, Any]):
-        """Execute using a spell card at a specific position."""
-        card_index = action.get("card_index")
-        target_pos = action.get("position")
+    def _upgrade_card(self, action: Action) -> None:
+        idx = action.card_index
+        if not (0 <= idx < len(self.card_positions)):
+            raise ValueError(f"card_index {idx} out of range")
+        pos = self.card_positions[idx]
+        pyautogui.moveTo(pos[0], pos[1])
+        pyautogui.doubleClick()
+        logger.info("Upgraded card %d", idx)
 
-        if card_index is not None and target_pos is not None and 0 <= card_index < len(self.card_positions):
-            card_pos = self.card_positions[card_index]
-
-            # Spells are used by clicking and dragging like regular cards
-            pyautogui.moveTo(card_pos[0], card_pos[1])
-            pyautogui.dragTo(
-                target_pos[0], target_pos[1], duration=0.3, tween=pyautogui.easeOutQuad)
-            logger.info(f"Used spell {card_index} at {target_pos}")
-        else:
-            logger.warning(f"Invalid spell card_index {card_index} or position {target_pos}")
-
-    def _execute_upgrade_card(self, action: Dict[str, Any]):
-        """Execute upgrading a card."""
-        card_index = action.get("card_index")
-
-        if card_index is not None and 0 <= card_index < len(self.card_positions):
-            card_pos = self.card_positions[card_index]
-
-            # Upgrade is typically done by double-clicking the card
-            pyautogui.moveTo(card_pos[0], card_pos[1])
-            pyautogui.doubleClick()
-            logger.info(f"Upgraded card {card_index}")
-        else:
-            logger.warning(f"Invalid card_index {card_index} for upgrade")
-
-    def _execute_wait(self, action: Dict[str, Any]):
-        """Execute a wait action."""
-        duration = action.get("duration", 1.0)
-
-        if duration > 0:
-            time.sleep(duration)
-            logger.info(f"Waited for {duration} seconds")
-        else:
-            logger.warning(f"Invalid wait duration: {duration}")
+    def _wait(self, action: Action) -> None:
+        duration = max(0.0, action.duration)
+        time.sleep(duration)
+        logger.debug("Waited %.2fs", duration)

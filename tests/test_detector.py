@@ -1,200 +1,177 @@
 """
-ElixirMind Vision Detector Tests
-Unit tests for the game state detection system.
+Detector tests — written against the actual current API.
+
+Previous version tested a legacy async GameStateDetector that no longer exists.
 """
 
-from config import Config
-from vision.detector import GameStateDetector, GameState, ElixirDetector, BattleDetector
-import pytest
-import numpy as np
-from unittest.mock import Mock, patch
-import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+import cv2
+import numpy as np
+import pytest
 
-
-class TestGameStateDetector:
-    """Tests for GameStateDetector class."""
-
-    @pytest.fixture
-    def config(self):
-        """Create test configuration."""
-        config = Config()
-        config.YOLO_MODEL_PATH = "test_model.pt"
-        config.CARD_TEMPLATES_PATH = "test_templates/"
-        return config
-
-    @pytest.fixture
-    def detector(self, config):
-        """Create detector instance."""
-        return GameStateDetector(config)
-
-    def test_detector_initialization(self, detector):
-        """Test detector initializes correctly."""
-        assert detector is not None
-        assert detector.config is not None
-        assert detector.yolo_model is None  # Not loaded yet
-
-    @pytest.mark.asyncio
-    async def test_load_models(self, detector):
-        """Test model loading."""
-        # Mock torch.hub.load to avoid actual model download
-        with patch('torch.hub.load') as mock_load:
-            mock_load.return_value = Mock()
-            result = await detector.load_models()
-            assert result is True
-
-    @pytest.mark.asyncio
-    async def test_analyze_frame_empty(self, detector):
-        """Test frame analysis with empty frame."""
-        empty_frame = np.zeros((100, 100, 3), dtype=np.uint8)
-
-        # Mock dependencies
-        with patch.object(detector.battle_detector, 'is_in_battle', return_value=False):
-            result = await detector.analyze_frame(empty_frame)
-
-        assert isinstance(result, GameState)
-        assert result.in_battle is False
-
-    @pytest.mark.asyncio
-    async def test_analyze_frame_in_battle(self, detector):
-        """Test frame analysis during battle."""
-        test_frame = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
-
-        # Mock all detector methods
-        with patch.object(detector.battle_detector, 'is_in_battle', return_value=True), \
-                patch.object(detector.elixir_detector, 'detect_elixir', return_value={'amount': 5, 'confidence': 0.8}), \
-                patch.object(detector, '_detect_cards_in_hand', return_value=[]), \
-                patch.object(detector, '_detect_troops_yolo', return_value={'enemy': [], 'friendly': []}), \
-                patch.object(detector, '_detect_towers', return_value={}):
-
-            result = await detector.analyze_frame(test_frame)
-
-        assert isinstance(result, GameState)
-        assert result.in_battle is True
-        assert result.current_elixir == 5
+from vision.detector import Detector
 
 
-class TestElixirDetector:
-    """Tests for ElixirDetector class."""
-
-    @pytest.fixture
-    def config(self):
-        return Config()
-
-    @pytest.fixture
-    def elixir_detector(self, config):
-        return ElixirDetector(config)
-
-    @pytest.mark.asyncio
-    async def test_detect_elixir_empty_region(self, elixir_detector):
-        """Test elixir detection with empty region."""
-        empty_region = np.array([])
-        result = await elixir_detector.detect_elixir(empty_region)
-
-        assert result['amount'] == 0
-        assert result['confidence'] == 0.0
-
-    @pytest.mark.asyncio
-    async def test_detect_elixir_color_method(self, elixir_detector):
-        """Test color-based elixir detection."""
-        # Create purple-tinted region (simulating elixir)
-        purple_region = np.full((100, 50, 3), [150, 0, 200], dtype=np.uint8)
-
-        elixir_detector.config.ELIXIR_DETECTION_METHOD = "color"
-        result = await elixir_detector.detect_elixir(purple_region)
-
-        assert isinstance(result['amount'], int)
-        assert 0 <= result['amount'] <= 10
-        assert 0.0 <= result['confidence'] <= 1.0
+@pytest.fixture
+def detector():
+    d = Detector({})
+    # Inject a mock cache manager so tests don't need the real one
+    d.cache_manager = MagicMock()
+    d.cache_manager.get.return_value = None
+    d.initialized = True
+    return d
 
 
-class TestBattleDetector:
-    """Tests for BattleDetector class."""
-
-    @pytest.fixture
-    def config(self):
-        return Config()
-
-    @pytest.fixture
-    def battle_detector(self, config):
-        return BattleDetector(config)
-
-    @pytest.mark.asyncio
-    async def test_battle_detection_empty_frame(self, battle_detector):
-        """Test battle detection with empty frame."""
-        empty_frame = np.zeros((100, 100, 3), dtype=np.uint8)
-        result = await battle_detector.is_in_battle(empty_frame)
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_battle_detection_with_elixir(self, battle_detector):
-        """Test battle detection with elixir colors present."""
-        # Create frame with purple region (simulating elixir bar)
-        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
-
-        # Add purple region where elixir should be
-        roi = battle_detector.config.ROI_ELIXIR
-        frame[roi[1]:roi[3], roi[0]:roi[2]] = [150, 0, 200]  # Purple color
-
-        result = await battle_detector.is_in_battle(frame)
-        # Result may vary based on exact color matching, but should not crash
-        assert isinstance(result, bool)
-
-# Integration tests
+@pytest.fixture
+def blank_frame():
+    return np.zeros((1080, 1920, 3), dtype=np.uint8)
 
 
-class TestDetectorIntegration:
-    """Integration tests for detector components."""
-
-    @pytest.fixture
-    def config(self):
-        config = Config()
-        config.DEBUG_MODE = True
-        return config
-
-    @pytest.mark.asyncio
-    async def test_full_detection_pipeline(self, config):
-        """Test complete detection pipeline."""
-        detector = GameStateDetector(config)
-
-        # Create realistic test frame
-        test_frame = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
-
-        # Mock model loading
-        with patch('torch.hub.load'):
-            await detector.load_models()
-
-        # Run detection
-        result = await detector.analyze_frame(test_frame)
-
-        # Verify result structure
-        assert isinstance(result, GameState)
-        assert hasattr(result, 'in_battle')
-        assert hasattr(result, 'current_elixir')
-        assert hasattr(result, 'cards_in_hand')
-        assert hasattr(result, 'enemy_troops')
-        assert hasattr(result, 'friendly_troops')
-
-    @pytest.mark.asyncio
-    async def test_performance_metrics(self, config):
-        """Test performance metrics collection."""
-        detector = GameStateDetector(config)
-
-        # Run several detections
-        test_frame = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
-
-        for _ in range(5):
-            await detector.analyze_frame(test_frame)
-
-        # Check performance stats
-        stats = detector.get_performance_stats()
-        assert 'avg_detection_time' in stats
-        assert 'detection_fps' in stats
-        assert len(stats['recent_times']) > 0
+@pytest.fixture
+def purple_elixir_frame():
+    """Frame with purple pixels in the elixir ROI."""
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    # ROI_ELIXIR default: (1700, 900, 1900, 1000) — fill with purple (RGB)
+    frame[900:1000, 1700:1900] = [200, 0, 200]
+    return frame
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+# ---------------------------------------------------------------------------
+# Initialization / shutdown
+# ---------------------------------------------------------------------------
+
+def test_detector_initializes_with_mocked_deps():
+    d = Detector({})
+    with patch("vision.detector.ScreenCapture") as mock_sc, \
+         patch("vision.detector.Detector.initialize") as mock_init:
+        mock_init.return_value = None
+        d.initialize()
+
+
+def test_detector_shutdown_clears_state(detector):
+    detector.screen_capture = MagicMock()
+    detector.shutdown()
+    assert detector.initialized is False
+
+
+# ---------------------------------------------------------------------------
+# detect_battle return type
+# ---------------------------------------------------------------------------
+
+def test_detect_battle_returns_tuple(detector, blank_frame):
+    result = detector.detect_battle(blank_frame)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
+def test_detect_battle_first_element_is_bool(detector, blank_frame):
+    battle_active, _ = detector.detect_battle(blank_frame)
+    assert isinstance(battle_active, bool)
+
+
+def test_detect_battle_returns_false_for_blank_frame(detector, blank_frame):
+    battle_active, _ = detector.detect_battle(blank_frame)
+    assert battle_active is False
+
+
+def test_detect_battle_returns_none_debug_image_when_not_debug(detector, blank_frame):
+    _, debug_img = detector.detect_battle(blank_frame, debug_mode=False)
+    assert debug_img is None
+
+
+def test_detect_battle_returns_debug_image_when_debug(detector, blank_frame):
+    _, debug_img = detector.detect_battle(blank_frame, debug_mode=True)
+    assert debug_img is not None
+    assert isinstance(debug_img, np.ndarray)
+
+
+# ---------------------------------------------------------------------------
+# detect_battle — cache behaviour
+# ---------------------------------------------------------------------------
+
+def test_detect_battle_uses_cache_on_second_call(detector, blank_frame):
+    detector.cache_manager.get.return_value = True  # cache hit
+    battle_active, _ = detector.detect_battle(blank_frame)
+    assert battle_active is True
+    # Should not call put again on a cache hit
+    detector.cache_manager.put.assert_not_called()
+
+
+def test_detect_battle_stores_result_in_cache(detector, blank_frame):
+    detector.cache_manager.get.return_value = None  # cache miss
+    detector.detect_battle(blank_frame)
+    detector.cache_manager.put.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# detect_battle — None screen
+# ---------------------------------------------------------------------------
+
+def test_detect_battle_returns_false_for_none_screen(detector):
+    battle_active, debug_img = detector.detect_battle(None)
+    assert battle_active is False
+    assert debug_img is None
+
+
+def test_detect_battle_returns_false_when_not_initialized(blank_frame):
+    d = Detector({})
+    d.initialized = False
+    battle_active, _ = d.detect_battle(blank_frame)
+    assert battle_active is False
+
+
+# ---------------------------------------------------------------------------
+# detect_battle_end
+# ---------------------------------------------------------------------------
+
+def test_detect_battle_end_returns_false_for_blank_frame(detector, blank_frame):
+    result = detector.detect_battle_end(blank_frame)
+    assert result is False
+
+
+def test_detect_battle_end_returns_false_for_none(detector):
+    assert detector.detect_battle_end(None) is False
+
+
+def test_detect_battle_end_detects_end_screen_colour(detector):
+    """A frame dominated by the end-screen blue/purple should trigger detection."""
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    # Fill >30% with BGR blue (maps to HSV hue ~120 — within [90,130])
+    frame[:, :] = [200, 0, 0]  # BGR blue
+    result = detector.detect_battle_end(frame)
+    assert result is True
+
+
+# ---------------------------------------------------------------------------
+# ROI configuration
+# ---------------------------------------------------------------------------
+
+def test_detector_reads_roi_from_config():
+    custom_roi = [10, 20, 100, 200]
+    d = Detector({"ROI_ELIXIR": custom_roi})
+    assert d.roi_elixir == tuple(custom_roi)
+
+
+def test_detector_uses_default_roi_when_not_in_config():
+    d = Detector({})
+    assert d.roi_elixir == (1700, 900, 1900, 1000)
+
+
+# ---------------------------------------------------------------------------
+# capture_screen
+# ---------------------------------------------------------------------------
+
+def test_capture_screen_returns_none_when_not_initialized():
+    d = Detector({})
+    d.initialized = False
+    assert d.capture_screen() is None
+
+
+def test_capture_screen_delegates_to_screen_capture(detector):
+    mock_frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    detector.screen_capture = MagicMock()
+    detector.screen_capture.capture.return_value = mock_frame
+    result = detector.capture_screen()
+    assert result is mock_frame

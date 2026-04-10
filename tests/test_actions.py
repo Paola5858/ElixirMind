@@ -1,267 +1,170 @@
 """
-ElixirMind Actions Tests  
-Unit tests for action controller and feedback systems.
+Actions Controller tests — written against the actual current API.
+
+Previous version tested a legacy async ActionController that no longer exists.
 """
 
-from config import Config
-from actions.feedback import ActionValidator, ActionFeedback, FeedbackType
-from actions.controller import ActionController, GameAction, ActionType
+from unittest.mock import MagicMock, patch
+
 import pytest
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch
-import sys
-from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent.parent))
+from actions.controller import Controller
+from core.types import Action, ActionResult, ActionType
 
 
-class TestActionController:
-    """Tests for ActionController class."""
-
-    @pytest.fixture
-    def config(self):
-        config = Config()
-        config.SAFE_MODE = True
-        config.CLICK_DELAY = 0.01  # Fast for testing
-        return config
-
-    @pytest.fixture
-    def controller(self, config):
-        return ActionController(config)
-
-    def test_controller_initialization(self, controller):
-        """Test controller initializes correctly."""
-        assert controller is not None
-        assert controller.config is not None
-        assert controller.safety_enabled is True
-
-    @pytest.mark.asyncio
-    async def test_execute_place_card_action(self, controller):
-        """Test place card action execution."""
-        action = GameAction(
-            action_type=ActionType.PLACE_CARD,
-            parameters={
-                'card_position': (240, 940),
-                'target_position': (960, 500)
-            }
-        )
-
-        # Mock PyAutoGUI to avoid actual mouse movements
-        with patch('pyautogui.moveTo'), \
-                patch('pyautogui.dragTo'):
-            result = await controller.execute_action(action)
-
-        assert isinstance(result, bool)
-
-    @pytest.mark.asyncio
-    async def test_execute_click_action(self, controller):
-        """Test click action execution."""
-        action = GameAction(
-            action_type=ActionType.CLICK,
-            parameters={'position': (960, 500)}
-        )
-
-        with patch('pyautogui.click'):
-            result = await controller.execute_action(action)
-
-        assert isinstance(result, bool)
-
-    @pytest.mark.asyncio
-    async def test_execute_wait_action(self, controller):
-        """Test wait action execution."""
-        action = GameAction(
-            action_type=ActionType.WAIT,
-            parameters={'duration': 0.1}
-        )
-
-        result = await controller.execute_action(action)
-        assert result is True
-
-    def test_safety_checks(self, controller):
-        """Test safety check functionality."""
-        # Test safe position
-        safe_pos = (960, 500)
-        assert controller._is_position_safe(safe_pos) is True
-
-        # Test unsafe positions
-        unsafe_positions = [
-            (-10, 500),    # Negative X
-            (2000, 500),   # Too large X
-            (500, -10),    # Negative Y
-            (500, 2000)    # Too large Y
-        ]
-
-        for pos in unsafe_positions:
-            assert controller._is_position_safe(pos) is False
-
-    def test_performance_stats(self, controller):
-        """Test performance statistics tracking."""
-        stats = controller.get_performance_stats()
-
-        assert 'total_actions' in stats
-        assert 'success_rate' in stats
-        assert 'actions_per_minute' in stats
-
-    def test_create_place_card_action(self, controller):
-        """Test helper method for creating place card actions."""
-        action = controller.create_place_card_action(0, 960, 500)
-
-        assert action is not None
-        assert action.action_type == ActionType.PLACE_CARD
-        assert 'card_position' in action.parameters
-        assert 'target_position' in action.parameters
+@pytest.fixture
+def controller():
+    return Controller({})
 
 
-class TestActionValidator:
-    """Tests for ActionValidator class."""
-
-    @pytest.fixture
-    def config(self):
-        return Config()
-
-    @pytest.fixture
-    def validator(self, config):
-        return ActionValidator(config)
-
-    @pytest.mark.asyncio
-    async def test_validate_card_placement(self, validator):
-        """Test card placement validation."""
-        # Mock game states
-        before_state = Mock()
-        before_state.current_elixir = 8
-        before_state.friendly_troops = []
-
-        after_state = Mock()
-        after_state.current_elixir = 4  # Elixir decreased
-        after_state.friendly_troops = [
-            {'center': [960, 500]}]  # New troop appeared
-
-        action_params = {
-            'target_position': (960, 500),
-            'card_position': (240, 940)
-        }
-
-        feedback = await validator.validate_card_placement(
-            action_params, before_state, after_state
-        )
-
-        assert isinstance(feedback, ActionFeedback)
-        assert feedback.feedback_type == FeedbackType.COMBINATION
-
-    @pytest.mark.asyncio
-    async def test_validate_click_action(self, validator):
-        """Test click action validation."""
-        before_state = Mock()
-        after_state = Mock()
-
-        # Mock different states to indicate change
-        before_state.current_elixir = 5
-        after_state.current_elixir = 5
-        before_state.friendly_troops = []
-        after_state.friendly_troops = []
-
-        feedback = await validator.validate_click_action(
-            (960, 500), before_state, after_state
-        )
-
-        assert isinstance(feedback, ActionFeedback)
-        assert feedback.feedback_type == FeedbackType.STATE_CHANGE
-
-    def test_success_rate_calculation(self, validator):
-        """Test success rate calculation."""
-        # Add some mock feedback
-        validator.feedback_history = [
-            ActionFeedback(
-                "1", True, 0.8, FeedbackType.VISUAL_CONFIRMATION, {}),
-            ActionFeedback("2", False, 0.3,
-                           FeedbackType.VISUAL_CONFIRMATION, {}),
-            ActionFeedback(
-                "3", True, 0.9, FeedbackType.VISUAL_CONFIRMATION, {})
-        ]
-
-        success_rate = validator.get_success_rate(60)  # Last hour
-        assert 0.0 <= success_rate <= 1.0
-
-    def test_feedback_stats(self, validator):
-        """Test comprehensive feedback statistics."""
-        # Add mock feedback
-        validator.feedback_history = [
-            ActionFeedback(
-                "1", True, 0.8, FeedbackType.VISUAL_CONFIRMATION, {}),
-            ActionFeedback("2", True, 0.7, FeedbackType.TIMING_BASED, {})
-        ]
-
-        stats = validator.get_feedback_stats()
-
-        assert 'total_actions' in stats
-        assert 'success_rate' in stats
-        assert 'average_confidence' in stats
-        assert 'feedback_types' in stats
+@pytest.fixture
+def controller_custom_positions():
+    positions = [(100, 900), (200, 900), (300, 900), (400, 900)]
+    return Controller({"card_positions": positions})
 
 
-class TestActionIntegration:
-    """Integration tests for action system."""
+# ---------------------------------------------------------------------------
+# Initialization
+# ---------------------------------------------------------------------------
 
-    @pytest.fixture
-    def config(self):
-        config = Config()
-        config.SAFE_MODE = True
-        return config
-
-    @pytest.mark.asyncio
-    async def test_action_execution_with_validation(self, config):
-        """Test complete action execution with validation."""
-        controller = ActionController(config)
-        validator = ActionValidator(config)
-
-        # Create test action
-        action = GameAction(
-            action_type=ActionType.PLACE_CARD,
-            parameters={
-                'card_position': (240, 940),
-                'target_position': (960, 500)
-            }
-        )
-
-        # Mock execution
-        with patch('pyautogui.moveTo'), \
-                patch('pyautogui.dragTo'):
-            success = await controller.execute_action(action)
-
-        # Mock validation
-        before_state = Mock()
-        after_state = Mock()
-
-        feedback = await validator.validate_card_placement(
-            action.parameters, before_state, after_state
-        )
-
-        assert isinstance(success, bool)
-        assert isinstance(feedback, ActionFeedback)
-
-    @pytest.mark.asyncio
-    async def test_combo_execution(self, config):
-        """Test combo action execution."""
-        controller = ActionController(config)
-
-        # Create combo actions
-        actions = [
-            GameAction(ActionType.PLACE_CARD, {
-                'card_position': (240, 940), 'target_position': (700, 500)
-            }),
-            GameAction(ActionType.WAIT, {'duration': 0.1}),
-            GameAction(ActionType.PLACE_CARD, {
-                'card_position': (480, 940), 'target_position': (1220, 500)
-            })
-        ]
-
-        with patch('pyautogui.moveTo'), \
-                patch('pyautogui.dragTo'):
-            results = await controller.execute_combo(actions)
-
-        assert len(results) == len(actions)
-        assert all(isinstance(result, bool) for result in results)
+def test_controller_initializes_without_error(controller):
+    controller.initialize()  # must not raise
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_controller_uses_default_card_positions(controller):
+    assert len(controller.card_positions) == 4
+
+
+def test_controller_uses_config_card_positions(controller_custom_positions):
+    assert controller_custom_positions.card_positions[0] == (100, 900)
+
+
+# ---------------------------------------------------------------------------
+# execute_actions return type
+# ---------------------------------------------------------------------------
+
+def test_execute_actions_returns_list(controller):
+    with patch("pyautogui.moveTo"), patch("pyautogui.dragTo"):
+        results = controller.execute_actions([
+            Action(type=ActionType.PLAY_CARD, card_index=0, position=(500, 500))
+        ])
+    assert isinstance(results, list)
+    assert len(results) == 1
+
+
+def test_execute_actions_returns_action_result_instances(controller):
+    with patch("pyautogui.moveTo"), patch("pyautogui.dragTo"):
+        results = controller.execute_actions([
+            Action(type=ActionType.PLAY_CARD, card_index=0, position=(500, 500))
+        ])
+    assert isinstance(results[0], ActionResult)
+
+
+def test_execute_actions_empty_list_returns_empty(controller):
+    results = controller.execute_actions([])
+    assert results == []
+
+
+# ---------------------------------------------------------------------------
+# play_card / use_spell
+# ---------------------------------------------------------------------------
+
+def test_play_card_success(controller):
+    with patch("pyautogui.moveTo") as mock_move, \
+         patch("pyautogui.dragTo") as mock_drag:
+        results = controller.execute_actions([
+            Action(type=ActionType.PLAY_CARD, card_index=1, position=(960, 400))
+        ])
+    assert results[0].success is True
+    mock_move.assert_called_once()
+    mock_drag.assert_called_once()
+
+
+def test_use_spell_success(controller):
+    with patch("pyautogui.moveTo"), patch("pyautogui.dragTo"):
+        results = controller.execute_actions([
+            Action(type=ActionType.USE_SPELL, card_index=2, position=(800, 300))
+        ])
+    assert results[0].success is True
+
+
+def test_play_card_invalid_index_returns_failure(controller):
+    results = controller.execute_actions([
+        Action(type=ActionType.PLAY_CARD, card_index=99, position=(500, 500))
+    ])
+    assert results[0].success is False
+    assert results[0].error is not None
+
+
+def test_play_card_missing_position_returns_failure(controller):
+    results = controller.execute_actions([
+        Action(type=ActionType.PLAY_CARD, card_index=0, position=None)
+    ])
+    assert results[0].success is False
+
+
+# ---------------------------------------------------------------------------
+# upgrade_card
+# ---------------------------------------------------------------------------
+
+def test_upgrade_card_success(controller):
+    with patch("pyautogui.moveTo"), patch("pyautogui.doubleClick"):
+        results = controller.execute_actions([
+            Action(type=ActionType.UPGRADE_CARD, card_index=0)
+        ])
+    assert results[0].success is True
+
+
+def test_upgrade_card_invalid_index_returns_failure(controller):
+    results = controller.execute_actions([
+        Action(type=ActionType.UPGRADE_CARD, card_index=10)
+    ])
+    assert results[0].success is False
+
+
+# ---------------------------------------------------------------------------
+# wait
+# ---------------------------------------------------------------------------
+
+def test_wait_action_success(controller):
+    with patch("time.sleep") as mock_sleep:
+        results = controller.execute_actions([
+            Action(type=ActionType.WAIT, duration=0.5)
+        ])
+    assert results[0].success is True
+    mock_sleep.assert_called_once_with(0.5)
+
+
+def test_wait_zero_duration_does_not_raise(controller):
+    with patch("time.sleep"):
+        results = controller.execute_actions([
+            Action(type=ActionType.WAIT, duration=0.0)
+        ])
+    assert results[0].success is True
+
+
+# ---------------------------------------------------------------------------
+# Multiple actions
+# ---------------------------------------------------------------------------
+
+def test_multiple_actions_all_tracked(controller):
+    actions = [
+        Action(type=ActionType.PLAY_CARD, card_index=0, position=(500, 500)),
+        Action(type=ActionType.WAIT, duration=0.0),
+        Action(type=ActionType.PLAY_CARD, card_index=1, position=(700, 400)),
+    ]
+    with patch("pyautogui.moveTo"), patch("pyautogui.dragTo"), patch("time.sleep"):
+        results = controller.execute_actions(actions)
+    assert len(results) == 3
+
+
+def test_one_failure_does_not_abort_remaining_actions(controller):
+    """A bad action must not prevent subsequent actions from executing."""
+    actions = [
+        Action(type=ActionType.PLAY_CARD, card_index=99, position=(500, 500)),  # bad
+        Action(type=ActionType.WAIT, duration=0.0),                              # good
+    ]
+    with patch("time.sleep"):
+        results = controller.execute_actions(actions)
+    assert results[0].success is False
+    assert results[1].success is True
