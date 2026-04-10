@@ -7,27 +7,28 @@ Key fixes vs previous version:
 """
 
 import logging
-from typing import List
+from typing import Any, List
 
 from actions.controller import Controller
 from stats.tracker import StatsTracker
 from strategy.base import Strategy
 from vision.detector import Detector
+from .state_machine import StateMachine
 from .types import ActionResult
 
 logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
-    def __init__(self, config: dict) -> None:
-        self.config = config
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config: dict[str, Any] = config
         self.detector = Detector(config)
         self.controller = Controller(config)
         self.strategy = Strategy(config)
         self.stats_tracker = StatsTracker(config)
         self.state_machine = None
 
-    def set_state_machine(self, state_machine) -> None:
+    def set_state_machine(self, state_machine: StateMachine | None) -> None:
         self.state_machine = state_machine
 
     def initialize(self) -> None:

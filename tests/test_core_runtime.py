@@ -1,6 +1,7 @@
 """Runtime tests for the ElixirMind core."""
 
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -22,7 +23,7 @@ def test_build_config_applies_defaults_when_file_is_missing():
     assert config.log_level == "INFO"
 
 
-def test_build_config_rejects_invalid_emulator_type(tmp_path):
+def test_build_config_rejects_invalid_emulator_type(tmp_path: Path):
     cfg = tmp_path / "config.json"
     cfg.write_text('{"emulator_type": "invalid"}', encoding="utf-8")
     with pytest.raises(ValueError, match="Unsupported emulator_type"):
@@ -47,7 +48,7 @@ def test_bot_manager_rejects_negative_poll_interval():
 def test_bot_manager_stop_is_idempotent():
     manager = BotManager({"poll_interval_seconds": 0.01})
     manager.orchestrator = MagicMock()
-    manager._running = True
+    manager._running = True  # type: ignore[misc]
 
     manager.stop()
     manager.stop()
@@ -60,7 +61,7 @@ def test_bot_manager_shutdown_state_exits_loop():
     manager = BotManager({"poll_interval_seconds": 0.01})
     manager.orchestrator = MagicMock()
     manager.state_machine = MagicMock()
-    manager._running = True
+    manager._running = True  # type: ignore[misc]
     manager.state_machine.get_state.side_effect = ["shutdown"]
 
     manager.run()

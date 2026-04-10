@@ -6,8 +6,9 @@ Real-time monitoring and control interface.
 
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -45,7 +46,7 @@ _LOG_FILE   = Path("data/bot.log")
 # Data helpers
 # ---------------------------------------------------------------------------
 
-def _load_bot_stats() -> dict:
+def _load_bot_stats() -> dict[str, Any]:
     """Read stats written by StatsTracker. Falls back to zeros."""
     try:
         if _STATS_FILE.exists():
@@ -55,17 +56,17 @@ def _load_bot_stats() -> dict:
     return {}
 
 
-def _system_stats() -> dict:
+def _system_stats() -> dict[str, Any]:
     return {
         "cpu_percent":    psutil.cpu_percent(interval=None),
         "memory_percent": psutil.virtual_memory().percent,
     }
 
 
-def _win_rate(stats: dict) -> float:
-    won   = stats.get("battles_won",  0)
-    lost  = stats.get("battles_lost", 0)
-    draw  = stats.get("battles_draw", 0)
+def _win_rate(stats: dict[str, Any]) -> float:
+    won   = int(stats.get("battles_won",  0))
+    lost  = int(stats.get("battles_lost", 0))
+    draw  = int(stats.get("battles_draw", 0))
     total = won + lost + draw
     return round(won / total * 100, 1) if total else 0.0
 
@@ -84,16 +85,16 @@ def _read_logs(n: int = 20) -> list[str]:
 # Dashboard sections
 # ---------------------------------------------------------------------------
 
-def _metrics_section(stats: dict) -> None:
+def _metrics_section(stats: dict[str, Any]) -> None:
     st.markdown('<h1 class="main-header">🤖 ElixirMind Dashboard</h1>',
                 unsafe_allow_html=True)
 
-    won   = stats.get("battles_won",  0)
-    total = won + stats.get("battles_lost", 0) + stats.get("battles_draw", 0)
+    won   = int(stats.get("battles_won",  0))
+    total = won + int(stats.get("battles_lost", 0)) + int(stats.get("battles_draw", 0))
     wr    = _win_rate(stats)
-    fps   = stats.get("performance_summary", {}).get("avg_fps", 0.0)
-    elixir_eff = stats.get("success_rate", 0.0) * 100
-    duration   = stats.get("session_duration", 0.0)
+    fps   = float(stats.get("performance_summary", {}).get("avg_fps", 0.0))
+    elixir_eff = float(stats.get("success_rate", 0.0)) * 100
+    duration   = float(stats.get("session_duration", 0.0))
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -195,7 +196,7 @@ def _logs_section() -> None:
     lines = _read_logs(20)
     st.code("\n".join(lines), language="log")
 
-    col_left, col_right = st.columns([1, 5])
+    col_left, _ = st.columns([1, 5])
     with col_left:
         auto_refresh = st.checkbox("Auto-refresh (5s)", value=False)
     if auto_refresh:
@@ -204,7 +205,7 @@ def _logs_section() -> None:
         st.rerun()
 
 
-def _sidebar(stats: dict) -> None:
+def _sidebar(stats: dict[str, Any]) -> None:
     st.sidebar.markdown("# 🤖 ElixirMind")
     st.sidebar.markdown("---")
 

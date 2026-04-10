@@ -1,0 +1,15 @@
+{
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportMissingTypeArgument": "none",
+  "reportMissingParameterType": "none",
+  "reportPrivateUsage": "none",
+  "reportGeneralTypeIssues": "warning",
+  "reportUnusedImport": "warning",
+  "reportUnusedVariable": "warning"
+}

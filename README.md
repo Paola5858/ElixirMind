@@ -1,6 +1,6 @@
 # 🤖 ElixirMind - Autonomous Clash Royale Bot
 
-<!-- markdownlint-disable MD033 -->
+<!-- markdownlint-disable MD033 MD060 -->
 <!-- Centered content starts -->
 
 ![ElixirMind Banner](https://via.placeholder.com/800x200/1f77b4/ffffff?text=ElixirMind+%7C+Autonomous+Clash+Royale+Bot)
@@ -11,14 +11,12 @@
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-red.svg)](https://opencv.org)
 [![YOLOv5](https://img.shields.io/badge/YOLOv5-Ultralytics-yellow.svg)](https://ultralytics.com)
 <!-- Centered content ends -->
-<!-- markdownlint-enable MD033 -->
+<!-- markdownlint-enable MD033 MD060 -->
 </div>
 
 **ElixirMind é um bot autônomo inteligente para Clash Royale que joga sozinho usando IA avançada, visão computacional e automação de alta precisão.**
 
 [🚀 Instalação](#-instalação-rápida) • [📖 Documentação](#-como-usar) • [🎯 Demonstração](#-demonstração) • [🛠️ Desenvolvimento](#️-desenvolvimento)
-
-</div>
 
 ---
 
@@ -135,15 +133,14 @@ docker-compose up --build
 
 ### 🛠️ **Configuração Personalizada**
 
-```python
+```text
 # config.json - Configuração principal
 {
   "REAL_MODE": true,
   "EMULATOR_TYPE": "memu",
   "USE_RL_STRATEGY": false,
   "AGGRESSION_LEVEL": 0.6,
-  "TARGET_FPS": 10,
-### 🛠️ **Configuração Personalizada**
+  "TARGET_FPS": 10
 }
 ```
 

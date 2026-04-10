@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import numpy as np
 
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class Strategy:
-    def __init__(self, config: dict) -> None:
-        self.config = config
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config: dict[str, Any] = config
         self.game_state = GameState()
         self._last_elixir: float = 0.0
         self._action_history: List[Action] = []
@@ -36,7 +36,7 @@ class Strategy:
         logger.info("Strategy shut down.")
 
     def decide_actions(
-        self, screen: np.ndarray, detector=None
+        self, screen: np.ndarray, detector: Any = None
     ) -> List[Action]:
         """Return a list of Actions for the current frame."""
         self._update_game_state(screen, detector)
@@ -53,7 +53,7 @@ class Strategy:
     # Game-state update
     # ------------------------------------------------------------------
 
-    def _update_game_state(self, screen: np.ndarray, detector) -> None:
+    def _update_game_state(self, screen: np.ndarray, detector: Any) -> None:
         """Update internal GameState from screen. Elixir is simulated until
         real OCR is wired in."""
         try:

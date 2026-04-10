@@ -16,7 +16,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Optional
 
 from core.types import ActionResult
 
@@ -28,10 +28,10 @@ _RESULT_KEYS = frozenset({"actions_successful", "actions_failed", "actions_total
 
 
 class StatsTracker:
-    def __init__(self, config: Dict = None) -> None:
-        self.config = config or {}
-        self.stats: Dict = defaultdict(int)
-        self.performance_history: deque = deque(maxlen=1000)
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self.config: dict[str, Any] = config or {}
+        self.stats: dict[str, Any] = defaultdict(int)
+        self.performance_history: deque[dict[str, Any]] = deque(maxlen=1000)
         self._session_start: Optional[float] = None
         self._last_update: Optional[float] = None
 
@@ -62,8 +62,8 @@ class StatsTracker:
 
     def update_stats(
         self,
-        results: List[ActionResult],
-        game_state: Dict = None,
+        results: list[ActionResult],
+        game_state: dict[str, Any] | None = None,
     ) -> None:
         """Update statistics from a list of ActionResults."""
         now = time.time()
@@ -96,7 +96,7 @@ class StatsTracker:
     # Queries
     # ------------------------------------------------------------------
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict[str, Any]:
         result = dict(self.stats)
         if self._session_start:
             result["session_duration"] = time.time() - self._session_start
@@ -154,7 +154,7 @@ class StatsTracker:
             ]
         return "\n".join(lines)
 
-    def register_monitoring(self, **monitors) -> None:
+    def register_monitoring(self, **monitors: Any) -> None:
         for name, monitor in monitors.items():
             setattr(self, name, monitor)
             logger.info("Registered monitoring component: %s", name)
@@ -164,19 +164,15 @@ class StatsTracker:
     # ------------------------------------------------------------------
 
     def _update_derived_stats(self) -> None:
-        # Sum only per-type counters; exclude result counters to avoid inflation.
-        total = sum(
-            v for k, v in self.stats.items()
+        total: int = sum(
+            int(v) for k, v in self.stats.items()
             if k.startswith("actions_") and k not in _RESULT_KEYS
         )
         self.stats["actions_total"] = total
+        successful: int = int(self.stats.get("actions_successful", 0))
+        self.stats["success_rate"] = successful / total if total > 0 else 0.0
 
-        successful = self.stats.get("actions_successful", 0)
-        self.stats["success_rate"] = (
-            successful / total if total > 0 else 0.0
-        )
-
-    def _update_game_stats(self, game_state: Dict) -> None:
+    def _update_game_stats(self, game_state: dict[str, Any]) -> None:
         if "elixir" in game_state:
             e = game_state["elixir"]
             n = self.stats.get("elixir_samples", 0)
@@ -202,25 +198,25 @@ class StatsTracker:
             )
             self.stats["time_samples"] = n + 1
 
-    def _collect_performance_metrics(self) -> Optional[Dict]:
+    def _collect_performance_metrics(self) -> Optional[dict[str, Any]]:
         if not self.performance_profiler:
             return None
         metrics = self.performance_profiler.get_current_metrics()
         if self.fps_monitor:
             metrics["fps"] = self.fps_monitor.get_fps_stats().get("current_fps", 0)
         if self.latency_tracker:
-            all_stats = self.latency_tracker.get_all_stats()
+            all_stats: dict[str, Any] = self.latency_tracker.get_all_stats() or {}
             if all_stats:
                 metrics["latency_ms"] = sum(
-                    s["mean"] for s in all_stats.values()
+                    float(s["mean"]) for s in all_stats.values()
                 ) / len(all_stats)
         return metrics
 
-    def _performance_summary(self) -> Dict:
-        cpu  = [m.get("cpu_percent", 0)    for m in self.performance_history]
-        mem  = [m.get("memory_percent", 0) for m in self.performance_history]
-        fps  = [m.get("fps", 0)            for m in self.performance_history]
-        n    = len(self.performance_history)
+    def _performance_summary(self) -> dict[str, Any]:
+        cpu: list[float] = [float(m.get("cpu_percent",    0)) for m in self.performance_history]
+        mem: list[float] = [float(m.get("memory_percent", 0)) for m in self.performance_history]
+        fps: list[float] = [float(m.get("fps",            0)) for m in self.performance_history]
+        n = len(self.performance_history)
         return {
             "avg_cpu":    sum(cpu) / n,
             "avg_memory": sum(mem) / n,

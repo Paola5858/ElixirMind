@@ -10,6 +10,7 @@ Improvements vs previous version:
 
 import logging
 import time
+from typing import Any
 
 from .orchestrator import Orchestrator
 from .state_machine import StateMachine
@@ -22,14 +23,14 @@ _BATTLE_CADENCE    = 0.1    # 100 ms between battle ticks
 
 
 class BotManager:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         poll = float(config.get("poll_interval_seconds", 0.25))
         if poll <= 0:
             raise ValueError(
                 f"poll_interval_seconds must be > 0, got {poll!r}"
             )
 
-        self.config = config
+        self.config: dict[str, Any] = config
         self._poll_interval = max(poll, _MIN_POLL_INTERVAL)
         self.orchestrator = Orchestrator(config)
         self.state_machine = StateMachine()

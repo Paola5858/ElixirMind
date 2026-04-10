@@ -66,7 +66,7 @@ def main() -> int:
         return 0
     except Exception:
         logger.exception("Unexpected error during application execution")
-        if bot_manager is not None and bot_manager.is_running():
+        if bot_manager is not None and bot_manager.is_running:
             bot_manager.stop()
         return 1
 

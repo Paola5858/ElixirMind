@@ -16,7 +16,15 @@ import os
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, cast
+
+
+# cspell:ignore Microvirt ldplayer ELIXIRMIND
+
+ConfigValue = str | int | float | bool
+ConfigDict = Dict[str, ConfigValue]
+EnvCaster = Callable[[str], ConfigValue]
+EnvOverrideMap = Dict[str, tuple[str, EnvCaster]]
 
 
 @dataclass(slots=True)
@@ -32,9 +40,9 @@ class AppConfig:
     poll_interval_seconds: float = 0.25
     config_path: str = "config.json"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> ConfigDict:
         """Return a mutable dictionary for compatibility with legacy modules."""
-        return asdict(self)
+        return cast(ConfigDict, asdict(self))
 
 
 DEFAULT_CONFIG = AppConfig()
@@ -45,7 +53,7 @@ def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _load_file_config(config_path: Path) -> Dict[str, Any]:
+def _load_file_config(config_path: Path) -> ConfigDict:
     if not config_path.exists():
         return {}
 
@@ -55,13 +63,13 @@ def _load_file_config(config_path: Path) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Configuration file must contain a JSON object: {config_path}")
 
-    return data
+    return cast(ConfigDict, data)
 
 
-def _load_environment_overrides() -> Dict[str, Any]:
-    overrides: Dict[str, Any] = {}
+def _load_environment_overrides() -> ConfigDict:
+    overrides: ConfigDict = {}
 
-    env_map = {
+    env_map: EnvOverrideMap = {
         "ELIXIRMIND_EMULATOR_TYPE": ("emulator_type", str),
         "ELIXIRMIND_MEMU_PATH": ("memu_path", str),
         "ELIXIRMIND_BLUESTACKS_PATH": ("bluestacks_path", str),
@@ -80,7 +88,7 @@ def _load_environment_overrides() -> Dict[str, Any]:
     return overrides
 
 
-def _validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def _validate_config(config: ConfigDict) -> ConfigDict:
     validated = deepcopy(config)
 
     emulator_type = str(validated.get("emulator_type", DEFAULT_CONFIG.emulator_type)).lower()
@@ -121,7 +129,18 @@ def build_config(config_path: str = "config.json") -> AppConfig:
     validated = _validate_config(merged)
     validated["config_path"] = str(path)
 
-    return AppConfig(**validated)
+    return AppConfig(
+        emulator_type=cast(str, validated["emulator_type"]),
+        memu_path=cast(str, validated.get("memu_path", DEFAULT_CONFIG.memu_path)),
+        bluestacks_path=cast(
+            str, validated.get("bluestacks_path", DEFAULT_CONFIG.bluestacks_path)
+        ),
+        instance_id=cast(int, validated["instance_id"]),
+        debug=cast(bool, validated["debug"]),
+        log_level=cast(str, validated["log_level"]),
+        poll_interval_seconds=cast(float, validated["poll_interval_seconds"]),
+        config_path=validated["config_path"],
+    )
 
 
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:
